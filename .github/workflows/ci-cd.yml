@@ -32,7 +32,7 @@ jobs:
         run: ./gradlew spotlessCheck
 
       - name: ESLint (TypeScript)
-        run: cd syncflow-ui && npx eslint src/ --max-warnings=0
+        run: cd syncflow-ui && npm ci && npm run lint
         continue-on-error: true
 
   compile:
