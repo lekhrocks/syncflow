@@ -2,17 +2,7 @@
 FROM eclipse-temurin:25-jdk-alpine AS builder
 WORKDIR /build
 
-RUN apk add --no-cache gradle
-
-COPY gradle gradle/
-COPY gradlew settings.gradle.kts build.gradle.kts ./
-COPY gradle/libs.versions.toml gradle/libs.versions.toml
-COPY syncflow-common syncflow-common/
-COPY syncflow-core syncflow-core/
-COPY syncflow-connectors syncflow-connectors/
-COPY syncflow-security syncflow-security/
-COPY syncflow-monitoring syncflow-monitoring/
-COPY syncflow-api syncflow-api/
+COPY . ./
 
 RUN ./gradlew :syncflow-api:bootJar --no-daemon -x test
 

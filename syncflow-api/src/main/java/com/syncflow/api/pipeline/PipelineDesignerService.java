@@ -1,10 +1,15 @@
 package com.syncflow.api.pipeline;
 
 import com.syncflow.api.metadata.MetadataDiscoveryService;
+import com.syncflow.api.pipeline.entity.PipelineDesignEntity;
+import com.syncflow.api.pipeline.entity.PipelineDesignVersionEntity;
+import com.syncflow.api.pipeline.mapper.JsonMapper;
+import com.syncflow.api.pipeline.mapper.PipelineDesignEntityMapper;
+import com.syncflow.api.pipeline.repository.PipelineDesignJpaRepository;
+import com.syncflow.api.pipeline.repository.PipelineDesignVersionJpaRepository;
 import com.syncflow.core.pipeline.AuditInformation;
 import com.syncflow.core.pipeline.DestinationReference;
 import com.syncflow.core.pipeline.PipelineDesign;
-import com.syncflow.core.pipeline.PipelineId;
 import com.syncflow.core.pipeline.PipelineName;
 import com.syncflow.core.pipeline.PipelineSettings;
 import com.syncflow.core.pipeline.SourceReference;
@@ -16,25 +21,34 @@ import com.syncflow.core.pipeline.preview.PreviewFilter;
 import com.syncflow.core.pipeline.preview.PreviewTransformation;
 import com.syncflow.core.pipeline.validation.ValidationResult;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
+@Transactional
 public class PipelineDesignerService {
 
-    private final Map<PipelineId, PipelineDesign> store = new ConcurrentHashMap<>();
-    private final Map<PipelineId, List<PipelineDesign>> versions = new ConcurrentHashMap<>();
+    private final PipelineDesignJpaRepository designRepo;
+    private final PipelineDesignVersionJpaRepository versionRepo;
+    private final PipelineDesignEntityMapper mapper;
+    private final JsonMapper jsonMapper;
     private final PipelineValidator validator;
     private final MetadataDiscoveryService metadataService;
 
-    public PipelineDesignerService(PipelineValidator validator,
+    public PipelineDesignerService(PipelineDesignJpaRepository designRepo,
+            PipelineDesignVersionJpaRepository versionRepo,
+            PipelineDesignEntityMapper mapper,
+            JsonMapper jsonMapper,
+            PipelineValidator validator,
             MetadataDiscoveryService metadataService) {
+        this.designRepo = designRepo;
+        this.versionRepo = versionRepo;
+        this.mapper = mapper;
+        this.jsonMapper = jsonMapper;
         this.validator = validator;
         this.metadataService = metadataService;
     }
@@ -44,21 +58,24 @@ public class PipelineDesignerService {
             List<TableMapping> mappings,
             PipelineSettings settings) {
         var design = PipelineDesign.create(name, source, destination, mappings, settings);
-        store.put(design.id(), design);
-        saveVersion(design);
+        var entity = mapper.toEntity(design, jsonMapper);
+        designRepo.save(entity);
+        saveVersion(entity, design);
         return design;
     }
 
+    @Transactional(readOnly = true)
     public PipelineDesign get(String id) {
-        var pipelineId = PipelineId.from(id);
-        var d = store.get(pipelineId);
-        if (d == null)
-            throw new NoSuchElementException("Pipeline not found: " + id);
-        return d;
+        return designRepo.findById(id)
+                .map(e -> mapper.toDomain(e, jsonMapper))
+                .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
     }
 
+    @Transactional(readOnly = true)
     public List<PipelineDesign> list() {
-        return List.copyOf(store.values());
+        return designRepo.findAll().stream()
+                .map(e -> mapper.toDomain(e, jsonMapper))
+                .toList();
     }
 
     public PipelineDesign update(String id, PipelineName name,
@@ -66,63 +83,63 @@ public class PipelineDesignerService {
             DestinationReference destination,
             List<TableMapping> mappings,
             PipelineSettings settings) {
-        var existing = get(id);
+        var entity = designRepo.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
+        var existing = mapper.toDomain(entity, jsonMapper);
         var now = Instant.now();
-        var audit = existing.audit();
-        var design = new PipelineDesign(
+        var updated = new PipelineDesign(
                 existing.id(), name, existing.status(),
                 source, destination, mappings, settings,
-                new AuditInformation(audit.version() + 1, audit.createdAt(), now, audit.createdBy()));
-        store.put(design.id(), design);
-        saveVersion(design);
-        return design;
+                new AuditInformation(existing.audit().version() + 1,
+                        existing.audit().createdAt(), now, existing.audit().createdBy()));
+        mapper.updateEntity(entity, updated, jsonMapper);
+        designRepo.save(entity);
+        saveVersion(entity, updated);
+        return updated;
     }
 
     public void delete(String id) {
-        var pipelineId = PipelineId.from(id);
-        if (store.remove(pipelineId) == null) {
+        if (!designRepo.existsById(id)) {
             throw new NoSuchElementException("Pipeline not found: " + id);
         }
-        versions.remove(pipelineId);
+        designRepo.deleteById(id);
     }
 
+    @Transactional(readOnly = true)
     public ValidationResult validate(String id) {
-        var design = get(id);
-        return validator.validate(design);
+        return validator.validate(get(id));
     }
 
+    @Transactional(readOnly = true)
     public List<PipelineDesign> versions(String id) {
-        var pipelineId = PipelineId.from(id);
-        var v = versions.get(pipelineId);
-        return v == null ? List.of() : List.copyOf(v);
+        return versionRepo.findByPipelineIdOrderByVersionAsc(id).stream()
+                .map(v -> jsonMapper.fromJson(v.getSnapshot(), PipelineDesign.class))
+                .toList();
     }
 
     public PipelineDesign rollback(String id, int targetVersion) {
-        var pipelineId = PipelineId.from(id);
-        var v = versions.get(pipelineId);
-        if (v == null || v.isEmpty())
-            throw new NoSuchElementException("No versions found");
-        var target = v.stream()
-                .filter(d -> d.audit().version() == targetVersion)
-                .findFirst()
-                .orElseThrow(() -> new NoSuchElementException("Version not found: " + targetVersion));
+        var versionEntity = versionRepo.findByPipelineIdAndVersion(id, targetVersion)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Version " + targetVersion + " not found for pipeline: " + id));
+        var target = jsonMapper.fromJson(versionEntity.getSnapshot(), PipelineDesign.class);
+        var entity = designRepo.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
         var now = Instant.now();
-        var currentAudit = target.audit();
         var rolled = new PipelineDesign(target.id(), target.name(), target.status(),
-                target.source(), target.destination(),
-                target.tableMappings(), target.settings(),
-                new AuditInformation(currentAudit.version(), currentAudit.createdAt(), now, currentAudit.createdBy()));
-        store.put(rolled.id(), rolled);
+                target.source(), target.destination(), target.tableMappings(), target.settings(),
+                new AuditInformation(entity.getVersion(), target.audit().createdAt(), now,
+                        target.audit().createdBy()));
+        mapper.updateEntity(entity, rolled, jsonMapper);
+        designRepo.save(entity);
         return rolled;
     }
 
+    @Transactional(readOnly = true)
     public PipelinePreview preview(String id) {
         var design = get(id);
-        var tm = design.tableMappings().stream().findFirst();
-        if (tm.isEmpty())
-            throw new IllegalStateException("No table mappings to preview");
+        var tm = design.tableMappings().stream().findFirst()
+                .orElseThrow(() -> new IllegalStateException("No table mappings to preview"));
 
-        var mapping = tm.get();
         var srcCols = new ArrayList<PreviewColumn>();
         var destCols = new ArrayList<PreviewColumn>();
         var transforms = new ArrayList<PreviewTransformation>();
@@ -131,7 +148,7 @@ public class PipelineDesignerService {
         try {
             var srcColumns = metadataService.discoverColumns(
                     design.source().connectionId(),
-                    design.source().schema(), mapping.sourceTable());
+                    design.source().schema(), tm.sourceTable());
             for (var col : srcColumns.data()) {
                 srcCols.add(new PreviewColumn(col.name(), col.dataType().jdbcType(),
                         col.dataType().jdbcType(), false, false));
@@ -140,41 +157,46 @@ public class PipelineDesignerService {
             srcCols.add(new PreviewColumn("(error: " + e.getMessage() + ")", "", "", false, false));
         }
 
-        for (var cm : mapping.columnMappings()) {
-            destCols.add(new PreviewColumn(cm.destinationColumn(), "", "", !cm.transformations().isEmpty(), false));
+        for (var cm : tm.columnMappings()) {
+            destCols.add(new PreviewColumn(cm.destinationColumn(), "", "",
+                    !cm.transformations().isEmpty(), false));
             for (var tr : cm.transformations()) {
                 transforms.add(new PreviewTransformation(cm.sourceColumn(), cm.destinationColumn(),
                         tr.type().name(), summarizeTransform(tr)));
             }
         }
 
-        if (mapping.filter() != null) {
-            for (var c : mapping.filter().conditions()) {
+        if (tm.filter() != null) {
+            for (var c : tm.filter().conditions()) {
                 filters.add(new PreviewFilter(c.field(), c.operator().name(),
                         c.values().isEmpty() ? "" : String.join(",", c.values())));
             }
         }
 
-        return new PipelinePreview(mapping.sourceTable(),
-                mapping.destinationTable() != null ? mapping.destinationTable() : mapping.destinationCollection(),
+        return new PipelinePreview(tm.sourceTable(),
+                tm.destinationTable() != null ? tm.destinationTable() : tm.destinationCollection(),
                 srcCols, destCols, transforms, filters, destCols.size());
     }
 
+    @Transactional(readOnly = true)
     public ConflictReport detectConflicts(String id) {
-        var design = get(id);
-        var issues = validator.validate(design).issues();
+        var issues = validator.validate(get(id)).issues();
         var conflicts = issues.stream()
                 .filter(i -> i.severity() == com.syncflow.core.pipeline.validation.ValidationIssue.Severity.ERROR)
                 .map(i -> new ConflictReport.ConflictItem(i.code(), i.field(), "", i.message()))
                 .toList();
-        return conflicts.isEmpty()
-                ? ConflictReport.clear()
-                : new ConflictReport(true, conflicts);
+        return conflicts.isEmpty() ? ConflictReport.clear() : new ConflictReport(true, conflicts);
     }
 
-    private void saveVersion(PipelineDesign design) {
-        versions.computeIfAbsent(design.id(), k -> new CopyOnWriteArrayList<>())
-                .add(design);
+    // ── Version snapshot ─────────────────────────────────────────────────────
+
+    private void saveVersion(PipelineDesignEntity entity, PipelineDesign design) {
+        var v = new PipelineDesignVersionEntity();
+        v.setPipeline(entity);
+        v.setVersion(design.audit().version());
+        v.setSnapshot(jsonMapper.toJson(design));
+        v.setSavedAt(Instant.now());
+        versionRepo.save(v);
     }
 
     private String summarizeTransform(com.syncflow.core.pipeline.transform.TransformationRule tr) {

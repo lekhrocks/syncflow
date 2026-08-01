@@ -1,0 +1,13 @@
+.git
+.gradle
+**/build
+**/out
+**/.idea
+**/node_modules
+**/target
+docker
+terraform
+docs
+website
+scripts
+.github

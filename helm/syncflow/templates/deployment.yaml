@@ -21,7 +21,9 @@ spec:
       annotations:
         {{- toYaml .Values.podAnnotations | nindent 8 }}
     spec:
+      {{- if .Values.serviceAccount.create }}
       serviceAccountName: {{ include "syncflow.fullname" . }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -49,7 +51,9 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.encryption.existingSecret }}
                   key: {{ .Values.encryption.key }}
-            {{- toYaml .Values.env | nindent 12 }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           livenessProbe:
