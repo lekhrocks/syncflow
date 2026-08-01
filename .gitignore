@@ -3,7 +3,6 @@
 # ──────────────────────────────────────────────
 .gradle/
 build/
-!gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
 
@@ -50,6 +49,7 @@ syncflow-ui/.eslintcache
 # ──────────────────────────────────────────────
 *.class
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 hs_err_pid*
 replay_pid*
