@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant PodA as Control Plane Pod A
+    participant PodB as Control Plane Pod B
+    participant LB as Load Balancer
+    participant Client as External Client
+
+    Note over PodA, PodB: Both pods start
+    PodA->>PodA: isLeader = false
+    PodB->>PodB: isLeader = false
+
+    Note over PodA, PodB: Leader election triggered
+    PodA->>PodA: becomeLeader()
+    PodA->>PodA: isLeader = true
+    PodA->>PodA: start tick() loop
+    Note over PodA: Scheduler active
+
+    PodB->>PodB: isLeader = false
+    PodB->>PodB: tick() not started
+    Note over PodB: Standby — no scheduler activity
+
+    Client->>LB: GET /api/workflows
+    LB->>PodA: request routed to Pod A
+    PodA-->>Client: workflow list
+
+    Client->>LB: GET /api/snapshots
+    LB->>PodB: request routed to Pod B
+    PodB-->>Client: snapshot list
+    Note over PodA, PodB: Both serve read requests
+
+    alt Pod A fails
+        PodA-->>xPodA: crash
+        PodB->>PodB: detect leader loss (heartbeat timeout)
+        PodB->>PodB: becomeLeader()
+        PodB->>PodB: start tick() loop
+        Note over PodB: Now the active scheduler
+    end
+
+    alt Pod A recovers
+        PodA->>PodA: isLeader = false
+        PodA->>PodA: detect existing leader
+        Note over PodA: Remains standby
+    end

@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant User
+    participant API as REST API
+    participant PM as PluginManager
+    participant CL as URLClassLoader
+    participant Plugin as PluginConnector
+    participant Audit as AuditStore
+
+    User->>API: POST /api/plugins/install
+    Note over User: multipart: plugin.jar
+    API->>PM: install(jarFile)
+
+    PM->>PM: open JarFile
+    PM->>PM: read MANIFEST.MF
+    alt missing Plugin-Id or Plugin-Connector-Class
+        PM-->>API: 400 {success: false}
+        API-->>User: 400 Bad Request
+    else valid manifest
+        PM->>CL: new URLClassLoader(jarURL)
+        CL->>PM: loadClass(connectorClass)
+        PM->>Plugin: newInstance()
+        Plugin-->>PM: PluginDescriptor
+        PM->>PM: plugins.put(pluginId, entry)
+        PM->>Audit: record("PLUGIN_INSTALLED", pluginId)
+        PM-->>API: 200 {success: true, pluginId}
+        API-->>User: 200 OK
+    end
+
+    User->>API: POST /api/plugins/{id}/enable
+    API->>PM: enable(pluginId)
+    PM->>PM: updateLifecycle(ENABLED)
+    PM->>Audit: record("PLUGIN_ENABLED", pluginId)
+    PM-->>API: 200 {enabled: true}
+    API-->>User: 200 OK

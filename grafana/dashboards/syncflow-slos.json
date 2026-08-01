@@ -1,0 +1,63 @@
+{
+  "title": "SyncFlow SRE Dashboard",
+  "uid": "syncflow-sre",
+  "panels": [
+    {
+      "title": "SLO: API Availability (99.9%)",
+      "type": "stat",
+      "targets": [{
+        "expr": "(sum(rate(http_requests_total{code=~\"2..|3..\"}[30d])) / sum(rate(http_requests_total[30d]))) * 100",
+        "legendFormat": "Availability"
+      }],
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 3}
+    },
+    {
+      "title": "SLO: Pipeline Success Rate (99.5%)",
+      "type": "stat",
+      "targets": [{
+        "expr": "(sum(rate(syncflow_pipeline_operations_total{status!=\"error\"}[30d])) / sum(rate(syncflow_pipeline_operations_total[30d]))) * 100",
+        "legendFormat": "Pipeline Success"
+      }],
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 3}
+    },
+    {
+      "title": "Error Budget (30d rolling)",
+      "type": "gauge",
+      "targets": [{
+        "expr": "1 - (sum(rate(http_requests_total{code=~\"5..\"}[30d])) / sum(rate(http_requests_total[30d]))) / 0.001",
+        "legendFormat": "Error Budget"
+      }],
+      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 3}
+    },
+    {
+      "title": "P99 Latency",
+      "type": "graph",
+      "targets": [{
+        "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+        "legendFormat": "P99"
+      }],
+      "gridPos": {"x": 0, "y": 3, "w": 6, "h": 4}
+    },
+    {
+      "title": "Events Processing Rate",
+      "type": "graph",
+      "targets": [
+        {"expr": "rate(syncflow_cdc_events_total[5m])", "legendFormat": "CDC Events/s"},
+        {"expr": "rate(syncflow_sync_events_processed_total[5m])", "legendFormat": "Sync Events/s"}
+      ],
+      "gridPos": {"x": 6, "y": 3, "w": 6, "h": 4}
+    },
+    {
+      "title": "Queue Depth",
+      "type": "graph",
+      "targets": [{"expr": "syncflow_workflow_queue_size", "legendFormat": "Queue"}],
+      "gridPos": {"x": 0, "y": 7, "w": 6, "h": 3}
+    },
+    {
+      "title": "Active Agents per Region",
+      "type": "graph",
+      "targets": [{"expr": "count by(region) (syncflow_agents_online)", "legendFormat": "{{region}}"}],
+      "gridPos": {"x": 6, "y": 7, "w": 6, "h": 3}
+    }
+  ]
+}

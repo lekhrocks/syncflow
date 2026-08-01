@@ -1,0 +1,36 @@
+plugins {
+    id "java-library"
+    id "application"
+    id "org.springframework.boot" version "3.5.3"
+    id "io.spring.dependency-management" version "1.1.7"
+}
+
+group = "com.syncflow.agent"
+version = "0.1.0"
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+dependencies {
+    implementation project(":syncflow-common")
+    implementation project(":syncflow-core")
+    implementation project(":syncflow-connectors")
+    implementation project(":syncflow-plugin-api")
+
+    implementation libs.spring.boot.starter.web
+    implementation libs.spring.boot.starter.actuator
+    implementation libs.logback.classic
+    implementation libs.micrometer.registry.prometheus
+    implementation libs.jackson.databind
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+
+    testImplementation libs.junit.jupiter
+}
+
+application {
+    mainClass = "com.syncflow.agent.SyncFlowAgent"
+}
+
+tasks.named("jar") { enabled = true }

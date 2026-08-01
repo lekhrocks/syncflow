@@ -1,0 +1,74 @@
+# ──────────────────────────────────────────────
+# Java / Gradle
+# ──────────────────────────────────────────────
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ──────────────────────────────────────────────
+# Node / UI
+# ──────────────────────────────────────────────
+syncflow-ui/node_modules/
+syncflow-ui/dist/
+syncflow-ui/.eslintcache
+*.tsbuildinfo
+
+# ──────────────────────────────────────────────
+# Secrets & Config
+# ──────────────────────────────────────────────
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*.cert
+*.keystore
+!gradle/eclipse-formatter.xml
+
+# ──────────────────────────────────────────────
+# JVM / Java
+# ──────────────────────────────────────────────
+*.class
+*.jar
+*.war
+hs_err_pid*
+replay_pid*
+
+# ──────────────────────────────────────────────
+# Logs
+# ──────────────────────────────────────────────
+*.log
+logs/
+
+# ──────────────────────────────────────────────
+# Docker
+# ──────────────────────────────────────────────
+docker/pgdata/
+
+# ──────────────────────────────────────────────
+# Testing
+# ──────────────────────────────────────────────
+/test-results/
+test-result/
+*.trx
+junit.xml

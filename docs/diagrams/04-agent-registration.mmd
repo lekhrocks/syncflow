@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant Agent as SyncFlow Agent
+    participant CP as Control Plane
+    participant FM as FleetManager
+    participant Audit as AuditStore
+    participant Metrics as Micrometer
+
+    Agent->>CP: POST /api/agents/register
+    Note over Agent: version, capabilities, labels, hostname
+    CP->>FM: register(version, caps, labels, env, region, hostname)
+    FM->>FM: agents.put(agent.id, agent)
+    FM->>Metrics: gauge.increment()
+    FM->>Audit: record("AGENT_REGISTERED", agentId)
+    FM-->>CP: Agent(ONLINE)
+    CP-->>Agent: 200 {id, status: ONLINE}
+
+    loop every 15 seconds
+        Agent->>CP: POST /api/agents/heartbeat
+        Note over Agent: cpuPercent, memory, runningJobs
+        CP->>FM: heartbeat(agentId, hardwareMetrics)
+        FM->>FM: pruneOffline()
+        FM-->>CP: Agent(updated)
+        CP-->>Agent: 200 {status: OK}
+    end
+
+    alt agent goes silent > 60s
+        FM->>FM: markStatus(UNREACHABLE)
+        FM->>Audit: record("AGENT_LOST", agentId)
+        FM->>Metrics: gauge.decrement()
+    end

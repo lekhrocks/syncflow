@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: syncflow-eu-west
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: Deployment
+      name: syncflow
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: REGION, value: "eu-west-1" }
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: DoNotSchedule
+  - target:
+      kind: Ingress
+      name: syncflow
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: syncflow-eu-west.example.com

@@ -1,0 +1,27 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: syncflow
+  namespace: syncflow
+spec:
+  scaleTargetRef:
+    name: syncflow
+  pollingInterval: 15
+  cooldownPeriod: 60
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  triggers:
+    - type: prometheus
+      metricType: AverageValue
+      metadata:
+        serverAddress: http://prometheus-server:9090
+        metricName: syncflow_queue_depth
+        query: sum(syncflow_workflow_queue_size)
+        threshold: "100"
+    - type: cpu
+      metadata:
+        type: Utilization
+        value: "60"
+  fallback:
+    failureThreshold: 3
+    replicas: 2

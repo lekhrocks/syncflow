@@ -1,0 +1,35 @@
+sequenceDiagram
+    participant Leader as Leader Pod
+    participant Follower as Follower Pod
+    participant API as REST API
+    participant LB as Load Balancer
+    participant DB as PostgreSQL
+
+    Note over Leader, Follower: Normal Operation
+    Leader->>Leader: scheduler.becomeLeader()
+    Leader->>Leader: tick() every 2s
+    Note over Leader: heartbeat every 10s
+    Leader->>DB: update lease
+
+    alt Leader Heartbeat Timeout (>30s)
+        Note over Follower: leader death detected
+        Follower->>Follower: isLeaderAlive() = false
+        Follower->>Follower: becomeLeader()
+        Follower->>Follower: start ticking
+        Follower->>DB: acquire lease
+        Note over Follower: workflows continue from in-memory state
+    end
+
+    alt Pod Crash
+        Note over API: Load balancer routes to remaining pod
+        API->>LB: request
+        LB->>Follower: route to healthy pod
+        Note over Follower: new leader starts workflows
+    end
+
+    alt Region Failure
+        Note over API: DNS failover to DR region
+        API->>API: control plane starts in DR region
+        API->>API: restore from checkpoint
+        API->>API: resume CDC from last offset
+    end

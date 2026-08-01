@@ -1,0 +1,154 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: pipelines.syncflow.io
+spec:
+  group: syncflow.io
+  names:
+    kind: Pipeline
+    plural: pipelines
+    singular: pipeline
+    shortNames:
+      - sp
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                syncMode:
+                  type: string
+                  enum: [FULL_SNAPSHOT, CDC_INCREMENTAL, CDC_SNAPSHOT_AND_INCREMENTAL]
+                  default: FULL_SNAPSHOT
+                batchSize:
+                  type: integer
+                  default: 1000
+                  minimum: 1
+                source:
+                  type: object
+                  properties:
+                    connectionRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        key:
+                          type: string
+                    schema:
+                      type: string
+                    table:
+                      type: string
+                destination:
+                  type: object
+                  properties:
+                    connectionRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        key:
+                          type: string
+                    schema:
+                      type: string
+                    table:
+                      type: string
+                columnMappings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      source:
+                        type: string
+                      destination:
+                        type: string
+                      transforms:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              enum: [RENAME, UPPERCASE, LOWERCASE, TRIM, DEFAULT_VALUE, CONCATENATE]
+                            params:
+                              type: object
+                              additionalProperties:
+                                type: string
+            status:
+              type: object
+              properties:
+                pipelineId:
+                  type: string
+                status:
+                  type: string
+                lastSynced:
+                  type: string
+                  format: date-time
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+      subresources:
+        status: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: syncflow-operator
+  namespace: syncflow-system
+data:
+  controller.ts: |
+    import { K8sApi, Watch } from "https://deno.land/x/kubernetes_client@v0.4.0/mod.ts";
+
+    const api = Deno.env.get("SYNCFLOW_API") || "http://syncflow:8080";
+    const token = Deno.env.get("SYNCFLOW_TOKEN") || "";
+
+    const headers = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
+
+    async function reconcile(pipeline: any) {
+      const spec = pipeline.spec;
+      const body = JSON.stringify({
+        name: spec.name,
+        sourceConnectionId: spec.source.connectionRef.name,
+        sourceSchema: spec.source.schema,
+        sourceTable: spec.source.table,
+        destConnectionId: spec.destination.connectionRef.name,
+        destSchema: spec.destination.schema,
+        destTable: spec.destination.table,
+        batchSize: spec.batchSize || 1000,
+      });
+
+      try {
+        const resp = await fetch(`${api}/api/pipelines`, { method: "POST", headers, body });
+        const data = await resp.json();
+        console.log(`Reconciled pipeline ${spec.name}: ${data.id}`);
+      } catch (e) {
+        console.error(`Failed to reconcile ${spec.name}:`, e.message);
+      }
+    }
+
+    const watch = new Watch("/apis/syncflow.io/v1/pipelines", headers, (_type: string, obj: any) => {
+      if (obj && obj.spec) reconcile(obj);
+    });
+
+    console.log("SyncFlow Operator started");
+    await watch.start();

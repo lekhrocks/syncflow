@@ -1,0 +1,15 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    implementation project(":syncflow-common")
+    implementation libs.lombok
+    implementation libs.logback.classic
+    annotationProcessor libs.lombok
+
+    testImplementation libs.junit.jupiter
+    testImplementation libs.mockito.core
+}
+
+tasks.named("jar") { enabled = true }

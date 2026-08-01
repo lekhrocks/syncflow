@@ -1,0 +1,16 @@
+server:
+  port: 9090
+
+spring:
+  application:
+    name: syncflow-agent
+
+syncflow:
+  agent:
+    control-plane: ${CONTROL_PLANE_URL:http://localhost:8080}
+    version: ${AGENT_VERSION:0.1.0}
+    heartbeat-interval: 15s
+
+logging:
+  level:
+    com.syncflow.agent: INFO

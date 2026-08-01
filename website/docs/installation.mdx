@@ -1,0 +1,172 @@
+---
+sidebar_position: 1
+---
+
+# Installation
+
+## Prerequisites
+
+- Java 21+ (JDK 21 recommended)
+- Docker & Docker Compose
+- Kubernetes 1.28+ (for production)
+- kubectl configured for your cluster
+- Helm 3.12+ (for Helm deployment)
+
+## Quick Start with Docker Compose
+
+```bash
+# Clone the repository
+git clone https://github.com/syncflow/syncflow.git
+cd syncflow
+
+# Start all services
+docker compose -f docker/docker-compose.yml up -d
+
+# Verify services are running
+docker compose ps
+
+# Access the UI
+open http://localhost:3000
+```
+
+## Quick Start with Kubernetes (Helm)
+
+```bash
+# Add the SyncFlow Helm repository
+helm repo add syncflow https://charts.syncflow.io
+helm repo update
+
+# Install SyncFlow
+helm install syncflow syncflow/syncflow \
+  --namespace syncflow \
+  --create-namespace \
+  --values values-prod.yaml
+
+# Verify deployment
+kubectl get pods -n syncflow
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SYNCFLOW_ENCRYPTION_KEY` | AES-256 encryption key (base64) | Required |
+| `SYNCFLOW_PIPELINE_MAX_CONCURRENT` | Max concurrent pipelines | 10 |
+| `SYNCFLOW_DATABASE_URL` | PostgreSQL JDBC URL | `jdbc:postgresql://localhost:5432/syncflow` |
+| `SYNCFLOW_PIPELINE_BATCH_SIZE` | Default batch size | 1000 |
+| `SYNCFLOW_METADATA_CACHE_TTL` | Metadata cache TTL | 5m |
+
+### Example Configuration
+
+```yaml
+# config.yaml
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/syncflow
+    username: syncflow
+    password: ${DB_PASSWORD}
+
+syncflow:
+  encryption:
+    key: ${ENCRYPTION_KEY}
+  pipeline:
+    max-concurrent: 10
+    default-batch-size: 1000
+  metadata:
+    cache-ttl: 5m
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+```
+
+## Kubernetes Deployment
+
+### Prerequisites
+
+- Kubernetes 1.28+
+- PostgreSQL 15+ (external or operator)
+- cert-manager for TLS certificates
+- cert-manager for TLS certificates
+- Ingress controller (nginx/Traefik)
+
+### Helm Installation
+
+```bash
+helm repo add syncflow https://charts.syncflow.io
+helm repo update
+
+helm install syncflow syncflow/syncflow \
+  --namespace syncflow \
+  --create-namespace \
+  --values values-prod.yaml
+```
+
+### Required Secrets
+
+```yaml
+# secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: syncflow-secrets
+  namespace: syncflow
+type: Opaque
+stringData:
+  encryption-key: "base64-encoded-32-byte-key"
+  db-password: "your-db-password"
+  api-key: "your-api-key"
+```
+
+Then reference in values:
+
+```yaml
+secrets:
+  existingSecret: syncflow-secrets
+```
+
+## Upgrade Procedure
+
+```bash
+# 1. Backup database
+kubectl exec -n syncflow postgresql-0 -- pg_dump -U syncflow syncflow > backup.sql
+
+# 2. Update Helm chart
+helm repo update
+helm upgrade syncflow syncflow/syncflow \
+  --namespace syncflow \
+  --values values-prod.yaml \
+  --atomic
+
+# 3. Verify
+kubectl rollout status deployment/syncflow-api -n syncflow
+```
+
+## Verification
+
+After installation, verify:
+
+```bash
+# Check pod status
+kubectl get pods -n syncflow
+
+# Check logs
+kubectl logs -n syncflow -l app=syncflow-api
+
+# Test API
+curl -k https://syncflow.example.com/api/health
+```
+
+## Next Steps
+
+- [Quick Start](/getting-started/quickstart) - Create your first pipeline
+- [Architecture](/platform/architecture) - Understand the system architecture
+- [Configuration](/configuration) - Detailed configuration options
+EOF

@@ -1,0 +1,60 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: syncflow-us-east
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: Deployment
+      name: syncflow
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: REGION, value: "us-east-1" }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: REPLICA_COUNT, value: "3" }
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: DoNotSchedule
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: syncflow
+  - target:
+      kind: Ingress
+      name: syncflow
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: syncflow-us-east.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: syncflow-us-east.example.com
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: syncflow
+  namespace: syncflow-us-east
+spec:
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75

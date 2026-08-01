@@ -1,0 +1,38 @@
+sequenceDiagram
+    participant User
+    participant API as REST API
+    participant PipeService as PipelineDesignerService
+    participant Val as PipelineValidator
+    participant Snap as SnapshotExecutor
+    participant CDC as CaptureLifecycle
+    participant Sync as SyncOrchestrator
+
+    User->>API: POST /pipelines
+    API->>PipeService: create(name, source, dest, mappings, settings)
+    PipeService-->>API: PipelineDesign(CREATED)
+    API-->>User: 201 Created
+
+    User->>API: POST /pipelines/{id}/validate
+    API->>Val: validate(pipeline)
+    Val->>Val: validateConnections()
+    Val->>Val: validateSourceTable()
+    Val->>Val: validateMappings()
+    Val->>Val: validateTransforms()
+    Val-->>API: ValidationResult
+    API-->>User: 200 OK
+
+    User->>API: POST /pipelines/{id}/snapshot
+    API->>Snap: start(pipelineId)
+    Snap-->>API: SnapshotJob(RUNNING)
+    API-->>User: 202 Accepted
+
+    User->>API: POST /pipelines/{id}/capture/start
+    API->>CDC: start(pipelineId)
+    CDC-->>API: CaptureStatus(RUNNING)
+    API-->>User: 200 OK
+
+    User->>API: POST /pipelines/{id}/sync/start
+    API->>Sync: start(pipelineId)
+    Sync->>CDC: start(pipelineId)
+    Sync-->>API: SyncJob(RUNNING)
+    API-->>User: 200 OK

@@ -1,0 +1,42 @@
+plugins {
+    id "java"
+    id "org.springframework.boot" version "3.5.3"
+    id "io.spring.dependency-management" version "1.1.7"
+}
+
+dependencies {
+    implementation project(":syncflow-core")
+    implementation project(":syncflow-connectors")
+    implementation project(":syncflow-security")
+    implementation project(":syncflow-monitoring")
+    implementation project(":syncflow-plugin-api")
+
+    implementation libs.spring.boot.starter.web
+    implementation libs.spring.boot.starter.validation
+    implementation libs.spring.boot.starter.data.jpa
+
+    implementation libs.spring.boot.starter.actuator
+    implementation libs.spring.boot.starter.security
+    implementation libs.spring.doc.openapi.starter.webmvc.ui
+    implementation libs.flyway.core
+    implementation libs.flyway.database.postgresql
+    implementation libs.postgresql
+    implementation libs.micrometer.registry.prometheus
+    implementation libs.logback.classic
+    implementation libs.mapstruct
+    implementation "com.github.ben-manes.caffeine:caffeine:3.2.0"
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+    annotationProcessor libs.mapstruct.processor
+
+    testImplementation(libs.spring.boot.starter.test) {
+        exclude group: "org.junit.vintage", module: "junit-vintage-engine"
+    }
+    testImplementation libs.testcontainers.postgresql
+    testImplementation libs.testcontainers.junit.jupiter
+    testImplementation libs.awaitility
+    testImplementation libs.archunit.junit5
+    testImplementation "io.rest-assured:rest-assured:5.5.1"
+    testImplementation "org.skyscreamer:jsonassert:1.5.3"
+}

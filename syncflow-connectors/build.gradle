@@ -1,0 +1,29 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    implementation project(":syncflow-core")
+    implementation libs.lombok
+    implementation libs.postgresql
+    implementation libs.mysql.connector.j
+    implementation libs.mongodb.driver.sync
+    implementation libs.debezium.embedded
+    implementation libs.debezium.connector.postgres
+    implementation libs.debezium.connector.mysql
+
+    compileOnly libs.kafka.clients
+
+    annotationProcessor libs.lombok
+
+    testImplementation libs.junit.jupiter
+    testImplementation libs.junit.platform.launcher
+    testImplementation libs.mockito.core
+    testImplementation libs.mockito.junit.jupiter
+    testImplementation libs.testcontainers.postgresql
+    testImplementation libs.testcontainers.junit.jupiter
+    testImplementation "org.testcontainers:mysql:1.20.6"
+    testImplementation "org.testcontainers:mongodb:1.20.6"
+}
+
+tasks.named("jar") { enabled = true }

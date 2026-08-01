@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: syncflow-environments
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - environment: dev
+            namespace: syncflow-dev
+            path: k8s/overlays/dev
+          - environment: qa
+            namespace: syncflow-qa
+            path: k8s/overlays/qa
+          - environment: prod
+            namespace: syncflow-prod
+            path: k8s/overlays/prod
+  template:
+    metadata:
+      name: "syncflow-{{environment}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/your-org/syncflow
+        targetRevision: HEAD
+        path: "{{path}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

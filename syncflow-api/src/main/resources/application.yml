@@ -1,0 +1,90 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: syncflow
+  datasource:
+    url: jdbc:postgresql://localhost:5432/syncflow
+    username: syncflow
+    password: syncflow
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] [%X{correlationId}] [%X{pipelineId}] %-5level %logger{36} - %msg%n"
+  level:
+    com.syncflow: INFO
+    org.springframework: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    metrics:
+      enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+syncflow:
+  pipeline:
+    max-name-length: 255
+    default-status: CREATED
+  connector:
+    connection-timeout: 30s
+    retry-count: 3
+  metadata:
+    cache-ttl: 5m
+    sample-size: 100
+  encryption:
+    # 16-byte AES key, base64-encoded. Replace in production with a secure key.
+    key: MDEyMzQ1Njc4OWFiY2RlZg==
+  ai:
+    endpoint: ${SYNCFLOW_AI_ENDPOINT:https://api.openai.com/v1/chat/completions}
+    model: ${SYNCFLOW_AI_MODEL:gpt-4o}
+    api-key: ${SYNCFLOW_AI_API_KEY:}
+    max-tokens: 4096
+    temperature: 0.3

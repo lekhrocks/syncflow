@@ -1,0 +1,166 @@
+---
+sidebar_position: 2
+---
+
+# Quick Start
+
+Get SyncFlow running in 5 minutes with Docker Compose.
+
+## Prerequisites
+
+- Docker & Docker Compose v2+
+- Java 21+ (JDK 21 recommended)
+- 4GB+ RAM available
+
+## Quick Start
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/syncflow/syncflow.git
+cd syncflow
+
+# 2. Start all services (PostgreSQL + SyncFlow API + UI)
+docker compose -f docker/docker-compose.yml up -d
+
+# Wait for services to be ready (~30 seconds)
+sleep 30
+
+# 3. Access the UI
+open http://localhost:3000
+
+# 4. Access the API
+curl http://localhost:8080/api/health
+```
+
+## Verify Installation
+
+```bash
+# Check API health
+curl -s http://localhost:8080/api/health | jq .
+
+# Expected output:
+# {
+#   "status": "UP",
+#   "components": {
+#     "database": "UP",
+    "components": {
+      "database": "UP",
+      "components": {
+        "database": "UP"
+      }
+    }
+  }
+}
+```
+
+## Create Your First Pipeline
+
+### 1. Create Connections
+
+```bash
+# Source connection (PostgreSQL)
+curl -X POST http://localhost:8080/api/connections \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "source-pg",
+    "type": "POSTGRESQL",
+    "host": "host.docker.internal",
+    "port": 5432,
+    "database": "source_db",
+    "username": "user",
+    "password": "password"
+  }'
+
+# Response: {"id": "conn-1", "name": "source-db", ...}
+```
+
+### Create Destination Connection
+
+```bash
+curl -X POST http://localhost:8080/api/connections \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "target-db",
+    "type": "MONGODB",
+    "host": "localhost",
+    "port": 27017,
+    "database": "analytics",
+    "username": "syncflow",
+    "password": "password"
+  }'
+```
+
+### Create Pipeline
+
+```bash
+curl -X POST http://localhost:8080/api/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "pg-to-mongo",
+    "sourceConnectionId": "conn-1",
+    "sourceSchema": "public",
+    "sourceTable": "users",
+    "destConnectionId": "conn-2",
+    "destDatabase": "analytics",
+    "destCollection": "users",
+    "mappings": [
+      {"source": "id", "target": "_id", "transform": "none"},
+      {"source": "email", "target": "email", "transform": "lowercase"},
+      {"source": "first_name", "target": "firstName"},
+      {"source": "last_name", "target": "lastName"},
+      {"source": "created_at", "target": "createdAt"}
+    ]
+  }'
+```
+
+### Start Sync
+
+```bash
+# Start snapshot sync
+curl -X POST http://localhost:8080/api/pipelines/{pipeline-id}/snapshot
+
+# Start CDC
+curl -X POST http://localhost:8080/api/pipelines/{pipeline-id}/cdc/start
+
+# Monitor progress
+curl http://localhost:8080/api/sync/jobs/{job-id}
+```
+
+## Configuration
+
+### Environment Variables
+
+```yaml
+# .env
+SERVER_PORT=8080
+DB_URL=jdbc:postgresql://localhost:5432/syncflow
+DB_USER=syncflow
+DB_PASSWORD=secret
+
+SYNCFLOW_ENCRYPTION_KEY=base64-encoded-32-byte-key
+SYNCFLOW_PIPELINE_MAX_CONCURRENT=10
+SYNCFLOW_BATCH_SIZE=1000
+```
+
+### Docker Compose Override
+
+```yaml
+# docker-compose.override.yml
+version: '3.8'
+services:
+  api:
+    environment:
+      - JAVA_OPTS=-Xmx2g -XX:+UseZGC
+      - SPRING_PROFILES_ACTIVE=prod
+  ui:
+    environment:
+      - VITE_API_URL=http://localhost:8080
+```
+
+## Next Steps
+
+- [Create your first pipeline](/pipelines/first-pipeline)
+- [Configure connectors](/connectors/overview)
+- [Set up monitoring](/operations/monitoring)
+- [Enable AI Copilot](/ai/overview)
+EOF

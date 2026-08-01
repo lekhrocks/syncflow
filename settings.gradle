@@ -1,0 +1,28 @@
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    plugins {
+        id "com.diffplug.spotless" version "7.0.2"
+    }
+}
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = "syncflow"
+
+include(
+    "syncflow-common",
+    "syncflow-core",
+    "syncflow-api",
+    "syncflow-connectors",
+    "syncflow-security",
+    "syncflow-monitoring",
+    "syncflow-plugin-api",
+    "syncflow-agent"
+)

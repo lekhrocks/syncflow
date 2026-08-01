@@ -1,0 +1,43 @@
+sequenceDiagram
+    participant SourceDB as Source Database
+    participant CDCConn as CDC Connector
+    participant Offset as OffsetStore
+    participant Publisher as EventPublisher
+    participant SyncOrch as SyncOrchestrator
+    participant IdStore as EventIdempotencyStore
+    participant TPipe as Transform Pipeline
+    participant DWriter as Dest Writer
+    participant DLQ as DeadLetterQueue
+    participant Retry as RetryEngine
+
+    SourceDB->>SourceDB: INSERT/UPDATE/DELETE
+    SourceDB->>CDCConn: WAL/ChangeStream
+    CDCConn->>CDCConn: parseDebeziumEvent()
+    CDCConn->>Publisher: publish(CDCEvent)
+    Publisher->>SyncOrch: queue.offer(event)
+
+    SyncOrch->>SyncOrch: queue.drainTo(batch)
+    loop per event
+        SyncOrch->>IdStore: isProcessed(eventId)
+        IdStore-->>SyncOrch: false
+        SyncOrch->>TPipe: filter(row).andThen(transform)
+        TPipe-->>SyncOrch: transformed row
+        SyncOrch->>DWriter: write(table, rows)
+        DWriter-->>SyncOrch: WriteResult(success)
+
+        alt success
+            SyncOrch->>IdStore: markProcessed(eventId)
+            SyncOrch->>Retry: success(eventId)
+        else failure
+            SyncOrch->>Retry: evaluate(pipeline, event, reason)
+            alt retryable
+                Retry-->>SyncOrch: RetryDecision(true, delay)
+                Note over SyncOrch: retry after delay
+            else permanent
+                Retry->>DLQ: add(event, reason, retryCount)
+            end
+        end
+    end
+
+    CDCConn->>Offset: save(pipelineId, offset)
+    Note over Offset: used for recovery on restart

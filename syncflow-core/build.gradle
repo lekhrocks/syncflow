@@ -1,0 +1,19 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    api project(":syncflow-common")
+    api "org.springframework:spring-context:6.2.6"
+    api libs.hibernate.validator
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+
+    testImplementation libs.junit.jupiter
+    testImplementation libs.junit.platform.launcher
+    testImplementation libs.mockito.core
+    testImplementation libs.mockito.junit.jupiter
+}
+
+tasks.named("jar") { enabled = true }

@@ -1,0 +1,38 @@
+sequenceDiagram
+    participant User
+    participant API as REST API
+    participant PipeService as PipelineService
+    participant SnapExec as SnapshotExecutor
+    participant SConn as Source Connector
+    participant TPipe as Transform Pipeline
+    participant DWriter as Dest Writer
+    participant Ckpt as CheckpointStore
+    participant Metrics as Micrometer
+
+    User->>API: POST /pipelines/{id}/snapshot
+    API->>SnapExec: start(pipelineId)
+    SnapExec->>PipeService: get(pipelineId)
+    PipeService-->>SnapExec: PipelineDesign
+    SnapExec->>SnapExec: resolveConnector()
+    SnapExec->>SnapExec: resolveWriter()
+    SnapExec->>Ckpt: get(pipelineId, table)
+    Ckpt-->>SnapExec: checkpoint or null
+    Note over SnapExec: resume from lastBatchNumber+1
+
+    loop per batch
+        SnapExec->>SConn: readBatch(schema, table, batchInfo)
+        SConn-->>SnapExec: Page(rows, nextCursor)
+        SnapExec->>TPipe: chain.process(row, ctx)
+        TPipe-->>SnapExec: transformed row
+        SnapExec->>DWriter: writeBatch(table, rows, columns)
+        SnapExec->>Metrics: counter.increment(batch.size)
+        alt every 5 batches
+            SnapExec->>Ckpt: save(checkpoint)
+        end
+    end
+
+    DWriter->>DWriter: flush()
+    DWriter->>DWriter: commit()
+    SnapExec->>Metrics: timer.stop()
+    SnapExec-->>API: SnapshotJob(COMPLETED)
+    API-->>User: 202 Accepted

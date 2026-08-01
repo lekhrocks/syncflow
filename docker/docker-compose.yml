@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: syncflow-postgres
+    environment:
+      POSTGRES_DB: syncflow
+      POSTGRES_USER: syncflow
+      POSTGRES_PASSWORD: syncflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: eclipse-temurin:25-jdk-alpine
+    container_name: syncflow-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/syncflow
+      SPRING_DATASOURCE_USERNAME: syncflow
+      SPRING_DATASOURCE_PASSWORD: syncflow
+      SPRING_PROFILES_ACTIVE: docker
+    volumes:
+      - ../syncflow-api/build/libs/syncflow-api.jar:/app/app.jar
+    working_dir: /app
+    entrypoint: ["java", "--enable-preview", "-jar", "app.jar"]
+
+volumes:
+  pgdata:

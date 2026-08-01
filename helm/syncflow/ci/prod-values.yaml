@@ -1,0 +1,55 @@
+replicaCount: 3
+
+image:
+  tag: latest
+  pullPolicy: Always
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 2
+    memory: 2Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: syncflow.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: syncflow-tls
+      hosts:
+        - syncflow.example.com
+
+database:
+  host: syncflow-db.cluster-xxx.us-east-1.rds.amazonaws.com
+  port: 5432
+  name: syncflow
+
+encryption:
+  existingSecret: syncflow-encryption
+  key: key
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - syncflow
+        topologyKey: kubernetes.io/hostname

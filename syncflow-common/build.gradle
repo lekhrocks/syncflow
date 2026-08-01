@@ -1,0 +1,16 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    api libs.lombok
+    api libs.jackson.databind
+    api libs.jackson.datatype.jsr310
+    api libs.hibernate.validator
+    api libs.guava
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+
+tasks.named("jar") { enabled = true }

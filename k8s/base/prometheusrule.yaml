@@ -1,0 +1,46 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: syncflow-alerts
+  namespace: syncflow
+spec:
+  groups:
+    - name: syncflow
+      rules:
+        - alert: PipelineFailureRateHigh
+          expr: rate(syncflow_pipeline_operations_total{status="error"}[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pipeline failure rate above 10%"
+        - alert: HighRetryRate
+          expr: rate(syncflow_sync_retries_total[5m]) > 5
+          for: 5m
+          labels:
+            severity: warning
+        - alert: DLQGrowing
+          expr: syncflow_sync_dlq_added_total > 100
+          for: 10m
+          labels:
+            severity: warning
+        - alert: CDCLagHigh
+          expr: syncflow_cdc_events_total - syncflow_sync_events_processed_total > 10000
+          for: 5m
+          labels:
+            severity: warning
+        - alert: QueueDepthHigh
+          expr: syncflow_workflow_queue_size > 500
+          for: 2m
+          labels:
+            severity: warning
+        - alert: AgentOffline
+          expr: syncflow_agents_online < 1
+          for: 1m
+          labels:
+            severity: critical
+        - alert: HighMemory
+          expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.9
+          for: 5m
+          labels:
+            severity: warning

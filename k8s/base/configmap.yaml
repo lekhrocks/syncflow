@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: syncflow-config
+  namespace: syncflow
+  labels:
+    app.kubernetes.io/name: syncflow
+data:
+  application.yml: |
+    server:
+      port: 8080
+    spring:
+      application:
+        name: syncflow
+      jpa:
+        hibernate:
+          ddl-auto: validate
+      flyway:
+        enabled: true
+        baseline-on-migrate: true
+    logging:
+      level:
+        com.syncflow: INFO
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,info,metrics,prometheus
+      endpoint:
+        health:
+          show-details: always
+      metrics:
+        export:
+          prometheus:
+            enabled: true
+    syncflow:
+      metadata:
+        cache-ttl: 5m

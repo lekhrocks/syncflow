@@ -1,0 +1,46 @@
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: syncflow-chaos
+  namespace: syncflow
+spec:
+  engineState: "active"
+  appinfo:
+    appns: syncflow
+    applabel: "app.kubernetes.io/name=syncflow"
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: CHAOS_INTERVAL
+              value: "10"
+            - name: PODS_AFFECTED_PERC
+              value: "30"
+    - name: pod-network-latency
+      spec:
+        components:
+          env:
+            - name: NETWORK_LATENCY
+              value: "2000"
+            - name: TOTAL_CHAOS_DURATION
+              value: "120"
+    - name: pod-cpu-hog
+      spec:
+        components:
+          env:
+            - name: CPU_CORES
+              value: "1"
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+    - name: pod-memory-hog
+      spec:
+        components:
+          env:
+            - name: MEMORY_CONSUMPTION
+              value: "500"
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"

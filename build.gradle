@@ -1,0 +1,118 @@
+plugins {
+    id "java"
+    id "com.diffplug.spotless" version "7.0.2"
+}
+
+group = "com.syncflow"
+version = "0.1.0"
+
+spotless {
+    java {
+        target "*/src/**/*.java"
+        trimTrailingWhitespace()
+        endWithNewline()
+        removeUnusedImports()
+        eclipse().configFile(rootProject.file("gradle/eclipse-formatter.xml"))
+    }
+}
+
+// ──────────────────────────────────────────────
+//  Developer Experience Tasks
+// ──────────────────────────────────────────────
+
+tasks.register("verify") {
+    group = "syncflow"
+    description = "Full verification: format check + compile + all unit tests"
+    dependsOn "spotlessCheck", "compileJava"
+    dependsOn ":syncflow-core:test", ":syncflow-api:test", ":syncflow-connectors:test"
+    doLast { println "✅ verify complete" }
+}
+
+tasks.register("benchmark") {
+    group = "syncflow"
+    description = "Run JMH microbenchmarks"
+    dependsOn ":syncflow-core:jmh"
+    doLast { println "✅ benchmark complete" }
+}
+
+tasks.register("integrationTest") {
+    group = "syncflow"
+    description = "Run Testcontainers integration tests (requires Docker)"
+    dependsOn ":syncflow-api:test", ":syncflow-connectors:test"
+    mustRunAfter ":syncflow-api:test"
+}
+
+tasks.register("smokeTest", Exec) {
+    group = "syncflow"
+    description = "Spin up Docker, run migration + smoke tests, tear down"
+    commandLine "bash", "-c", """
+        set -e
+        echo "🚀 Starting PostgreSQL..."
+        docker compose -f docker/docker-compose.yml up -d postgres
+        echo "⏳ Waiting for PostgreSQL..."
+        sleep 10
+        echo "🧪 Running smoke tests..."
+        ./gradlew :syncflow-api:test --tests "*IntegrationTest*" -Dtests.integration=true
+        echo "🧹 Tearing down..."
+        docker compose -f docker/docker-compose.yml down
+        echo "✅ smoke test complete"
+    """
+}
+
+tasks.register("e2eTest", Exec) {
+    group = "syncflow"
+    description = "Full end-to-end: spin up, run all tests, tear down"
+    commandLine "bash", "-c", """
+        set -e
+        echo "🚀 Starting full environment..."
+        docker compose -f docker/docker-compose.yml up -d
+        echo "⏳ Waiting for services..."
+        sleep 20
+        echo "🧪 Running all tests..."
+        ./gradlew test -Dtests.integration=true
+        echo "🧹 Tearing down..."
+        docker compose -f docker/docker-compose.yml down -v
+        echo "✅ e2e test complete"
+    """
+}
+
+tasks.register("chaosTest") {
+    group = "syncflow"
+    description = "Run chaos experiments (requires K8s + LitmusChaos)"
+    doLast {
+        println "⚠️  chaosTest requires a Kubernetes cluster with LitmusChaos."
+        println "   Apply: kubectl apply -f scripts/chaos/experiment.yaml"
+        println "   Watch: kubectl get chaosengine -n syncflow -w"
+    }
+}
+
+tasks.register("dev") {
+    group = "syncflow"
+    description = "Start local development environment"
+    doLast {
+        println "✅ Local dev setup:"
+        println "   1. Start PostgreSQL:  docker compose -f docker/docker-compose.yml up -d postgres"
+        println "   2. Start API:         ./gradlew :syncflow-api:bootRun --args='--spring.profiles.active=local'"
+        println "   3. Start UI:          cd syncflow-ui && npm run dev"
+    }
+}
+
+subprojects {
+    apply plugin: "java-library"
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = "UTF-8"
+        options.compilerArgs.add("--enable-preview")
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        jvmArgs("--enable-preview")
+    }
+}

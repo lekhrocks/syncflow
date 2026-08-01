@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/syncflow
+    username: syncflow
+    password: syncflow
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+logging:
+  level:
+    com.syncflow: DEBUG
+
+server:
+  port: 8080

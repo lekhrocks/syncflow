@@ -1,0 +1,14 @@
+apiVersion: v2
+name: syncflow
+description: Helm chart for SyncFlow Enterprise CDC Platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cdc
+  - data-sync
+  - event-streaming
+home: https://syncflow.io
+maintainers:
+  - name: SyncFlow Team
+    email: team@syncflow.io

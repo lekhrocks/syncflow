@@ -1,0 +1,90 @@
+---
+sidebar_position: 1
+---
+
+# Quick Start
+
+Build your first data synchronization pipeline in 5 minutes.
+
+## Prerequisites
+
+- Docker & Docker Compose
+- Java 21+ (JDK 21 recommended)
+- 4GB+ RAM available
+
+## Quick Start (5 minutes)
+
+### 1. Start the platform
+
+```bash
+# Clone the repository
+git clone https://github.com/syncflow/syncflow.git
+cd syncflow
+
+# Start all services
+docker compose -f docker/docker-compose.yml up -d
+
+# Wait for services to be healthy (about 30 seconds)
+docker compose ps
+```
+
+### 2. Access the UI
+
+Open your browser and navigate to:
+
+```
+http://localhost:3000
+```
+
+You should see the SyncFlow dashboard.
+
+### 2. Create Your First Connection
+
+1. Navigate to **Connections** → **New Connection**
+2. Fill in your source database details:
+   - **Type**: PostgreSQL (or MySQL, MongoDB, Redis)
+   - **Host**: Your database host
+   - **Port**: Database port (e.g., 5432 for PostgreSQL)
+   - **Database**: Database name
+   - **Username/Password**: Database credentials
+3. Click **Test Connection** → **Save**
+
+### 3. Create Your First Pipeline
+
+1. Go to **Pipelines** → **New Pipeline**
+2. **Name**: `my-first-pipeline`
+3. **Source**: Select your source connection
+3. **Source Table**: Select a table (e.g., `users`)
+4. **Destination**: Select target connection
+4. **Mappings**: Map source columns to destination columns
+   - Add column mappings (e.g., `id` → `id`, `email` → `email`)
+   - Add transformations if needed (e.g., `lowercase` on email)
+4. Add filter if needed (e.g., `deleted_at IS NULL`)
+4. Click **Save**
+
+### 4. Run Your First Snapshot
+
+1. Go to **Pipelines** → Select your pipeline
+2. Click **Run Snapshot**
+3. Watch the progress bar as data is copied
+4. Verify data in destination
+
+```bash
+# Check progress via CLI
+syncflow pipeline snapshot-status <pipeline-id>
+```
+
+## Next Steps
+
+- [Create your first pipeline](/pipelines/overview)
+- [Configure transformations](/pipelines/transformations)
+- [Set up scheduling](/pipelines/scheduling)
+- [Monitor with Grafana](/operations/monitoring)
+- [Set up alerts](/operations/alerts)
+
+## Need Help?
+
+- [Troubleshooting](/reference/troubleshooting)
+- [FAQ](/reference/faq)
+- [Discord Community](https://discord.gg/syncflow)
+- [GitHub Issues](https://github.com/syncflow/syncflow/issues)

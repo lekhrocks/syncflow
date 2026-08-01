@@ -1,0 +1,35 @@
+sequenceDiagram
+    participant User
+    participant UI as React UI
+    participant API as REST API
+    participant AISvc as AiCopilotService
+    participant Ctx as ContextCollector
+    participant Orc as AgentOrchestrator
+    participant KB as KnowledgeBase
+    participant LLM as LLM Client
+
+    User->>UI: "Design a pipeline from PG to MongoDB"
+    UI->>API: POST /api/ai/chat
+    API->>AISvc: chat(sessionId, message)
+    AISvc->>Ctx: collect()
+    Ctx-->>AISvc: SyncFlowContext(connections, pipelines, jobs)
+    AISvc->>Orc: createPlan(message)
+
+    Orc->>Orc: detect keywords
+    Note over Orc: "pipeline" + "PG" + "MongoDB"
+    Orc-->>AISvc: ReasoningPlan(3 steps)
+
+    loop per step
+        AISvc->>Orc: executeStep(agent, task)
+        Orc->>KB: search(term)
+        KB-->>Orc: relevant documents
+        Orc->>LLM: call(prompt + context + docs)
+        LLM-->>Orc: generated response
+        Orc-->>AISvc: AgentResult(summary, details)
+    end
+
+    AISvc->>AISvc: synthesize results
+    AISvc->>AISvc: conversation.add(user, assistant)
+    AISvc-->>API: AiResponse(message)
+    API-->>UI: 200 {message}
+    UI-->>User: rendered response

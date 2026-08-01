@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: spotless
+        name: Spotless Java Format
+        entry: ./gradlew spotlessApply
+        language: system
+        files: \.java$
+        pass_filenames: false
+
+  - repo: https://github.com/streetsidesoftware/cspell-cli
+    rev: v8.0.0
+    hooks:
+      - id: cspell
+        args: ["--no-summary", "--no-progress"]
+        files: \.(java|md|yml|yaml|json)$

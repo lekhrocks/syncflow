@@ -1,0 +1,43 @@
+sequenceDiagram
+    participant User
+    participant API as REST API
+    participant Sched as WorkflowScheduler
+    participant Queue as TaskQueue
+    participant Worker as Worker Thread
+    participant Metrics as Micrometer
+
+    User->>API: POST /api/workflows
+    API->>Sched: create(pipelineId)
+    Sched->>Sched: buildPipelineWorkflow()
+    Sched-->>API: WorkflowInstance(PENDING)
+    API-->>User: 201 Created
+
+    User->>API: POST /api/workflows/{id}/start
+    API->>Sched: start(workflowId)
+    Sched->>Sched: withStatus(RUNNING)
+    Sched->>Sched: findReadyTasks()
+
+    loop per ready task
+        Sched->>Queue: enqueue(workflowId, taskId)
+    end
+
+    Sched-->>API: WorkflowInstance(RUNNING)
+    API-->>User: 200 OK
+
+    loop every 2 seconds (leader only)
+        Sched->>Sched: tick()
+        Sched->>Sched: findReadyTasks()
+        alt has ready tasks
+            Sched->>Queue: enqueue(task)
+            Sched->>Metrics: gauge(queue.size)
+        end
+    end
+
+    Queue-->>Worker: dequeue()
+    Worker->>Worker: execute(task)
+    Worker->>Sched: markCompleted(taskId)
+
+    User->>API: GET /api/workflows/{id}/graph
+    API->>Sched: get(workflowId)
+    Sched-->>API: WorkflowInstance + tasks
+    API-->>User: 200 OK

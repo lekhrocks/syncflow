@@ -1,0 +1,25 @@
+plugins {
+    id "java-library"
+    id "maven-publish"
+}
+
+group = "com.syncflow.plugin"
+version = "0.1.0"
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+    withJavadocJar()
+    withSourcesJar()
+}
+
+tasks.named("jar") { enabled = true }
+
+publishing {
+    publications {
+        sdk(MavenPublication) {
+            from components.java
+            groupId = "com.syncflow.plugin"
+            artifactId = "syncflow-plugin-api"
+        }
+    }
+}

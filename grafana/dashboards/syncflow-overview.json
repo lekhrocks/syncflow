@@ -1,0 +1,60 @@
+{
+  "title": "SyncFlow Platform Overview",
+  "uid": "syncflow-overview",
+  "panels": [
+    {
+      "title": "Pipeline Operations",
+      "type": "stat",
+      "targets": [{
+        "expr": "sum(syncflow_pipeline_operations_total)",
+        "legendFormat": "Total Operations"
+      }],
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4}
+    },
+    {
+      "title": "Active Pipelines",
+      "type": "stat",
+      "targets": [{
+        "expr": "count(syncflow_pipeline_status)",
+        "legendFormat": "Active"
+      }],
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4}
+    },
+    {
+      "title": "Events Captured / sec",
+      "type": "graph",
+      "targets": [{
+        "expr": "rate(syncflow_cdc_events_total[5m])",
+        "legendFormat": "events/s"
+      }],
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 4}
+    },
+    {
+      "title": "Sync Throughput",
+      "type": "graph",
+      "targets": [{
+        "expr": "rate(syncflow_sync_events_processed_total[5m])",
+        "legendFormat": "events/s"
+      }],
+      "gridPos": {"x": 0, "y": 4, "w": 8, "h": 4}
+    },
+    {
+      "title": "Retries & Errors",
+      "type": "graph",
+      "targets": [
+        {"expr": "rate(syncflow_sync_retries_total[5m])", "legendFormat": "Retries"},
+        {"expr": "rate(syncflow_sync_errors_total[5m])", "legendFormat": "Errors"}
+      ],
+      "gridPos": {"x": 8, "y": 4, "w": 8, "h": 4}
+    },
+    {
+      "title": "JVM Memory",
+      "type": "graph",
+      "targets": [{
+        "expr": "jvm_memory_used_bytes{area='heap'}",
+        "legendFormat": "Heap Used"
+      }],
+      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 4}
+    }
+  ]
+}
