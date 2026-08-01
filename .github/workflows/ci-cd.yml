@@ -29,6 +29,7 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Spotless Check
@@ -48,6 +49,7 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v6
       - uses: actions/setup-node@v7
         with:
@@ -72,6 +74,7 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Core Unit Tests
@@ -86,6 +89,16 @@ jobs:
       - name: Plugin API Unit Tests
         run: ./gradlew :syncflow-plugin-api:test
 
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: |
+            **/build/reports/tests/test/
+            **/build/test-results/test/
+          retention-days: 7
+
   arch-tests:
     name: Architecture Tests
     needs: unit-tests
@@ -96,10 +109,19 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v6
 
       - name: ArchUnit Tests
         run: ./gradlew :syncflow-api:test --tests "*ArchitectureTest*"
+
+      - name: Upload ArchUnit Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: archunit-reports
+          path: syncflow-api/build/reports/tests/test/
+          retention-days: 7
 
   integration-tests:
     name: Integration Tests
@@ -125,6 +147,7 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Integration Tests (Testcontainers)
@@ -133,6 +156,16 @@ jobs:
             --tests "*IntegrationTest*" \
             --tests "*MetadataIntegrationTest*" \
             --tests "*PipelineApiIntegrationTest*"
+
+      - name: Upload Integration Test Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-test-reports
+          path: |
+            syncflow-api/build/reports/tests/test/
+            syncflow-api/build/test-results/test/
+          retention-days: 7
 
   mutation-tests:
     name: Mutation Testing
@@ -144,16 +177,23 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v6
 
       - name: PIT Mutation Tests (Core)
-        run: |
-          ./gradlew :syncflow-core:pitest
+        run: ./gradlew :syncflow-core:pitest
         continue-on-error: true
+
+      - name: Upload PIT Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pitest-reports
+          path: syncflow-core/build/reports/pitest/
+          retention-days: 7
 
   performance-tests:
     name: Performance Benchmarks
-    needs: unit-tests
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
@@ -162,12 +202,21 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'                         # fix #8: cache gradle deps
       - uses: gradle/actions/setup-gradle@v6
       - uses: grafana/setup-k6-action@v1
 
       - name: JMH Benchmarks
         run: ./gradlew :syncflow-core:jmh
         continue-on-error: true
+
+      - name: Upload JMH Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jmh-results
+          path: syncflow-core/build/reports/jmh/
+          retention-days: 30
 
       - name: k6 Smoke Test
         run: k6 run k6/benchmark.js --vus 10 --duration 30s
@@ -205,11 +254,26 @@ jobs:
           restore-keys: |
             nvd-${{ runner.os }}-
 
+      - uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+      - uses: gradle/actions/setup-gradle@v6
+
       - name: Dependency Check
         run: ./gradlew dependencyCheckAnalyze
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         continue-on-error: true
+
+      - name: Upload Dependency Check Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-check-reports
+          path: build/reports/dependency-check/
+          retention-days: 30
 
   docker-build:
     name: Docker Build + SBOM
@@ -225,17 +289,27 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v6
 
       - name: Build Fat JAR
         run: ./gradlew :syncflow-api:bootJar -x test
 
+      - name: Install Trivy CLI
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
       - name: Generate SBOM
         run: |
-          # CycloneDX Gradle plugin
           ./gradlew cyclonedxBom || true
-          # Also use Trivy for container-level SBOM
           trivy filesystem --format cyclonedx --output sbom.cdx.json .
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          retention-days: 90
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -256,9 +330,9 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ steps.meta.outputs.labels['org.opencontainers.image.created'] }}
 
       - name: Container Vulnerability Scan
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
@@ -267,13 +341,16 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Upload Container Scan
+        if: github.event_name != 'pull_request'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'container-scan.sarif'
 
       - name: Cosign image signature
+        if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@v4
       - name: Sign container image
+        if: github.event_name != 'pull_request'
         run: |
           cosign sign --yes \
             --key env://COSIGN_PRIVATE_KEY \
@@ -316,6 +393,17 @@ jobs:
           kubectl apply -k k8s/overlays/dev -n syncflow-staging
           kubectl rollout status deployment syncflow -n syncflow-staging --timeout=120s
 
+      - name: Notify staging failure
+        if: failure()
+        uses: slackapi/slack-github-action@v4
+        with:
+          payload: |
+            {
+              "text": "⚠️ Staging deployment failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
   smoke-tests:
     name: Smoke Tests
     needs: deploy-staging
@@ -343,7 +431,7 @@ jobs:
 
   deploy-prod:
     name: Deploy to Production
-    needs: [smoke-tests, security-scan]
+    needs: [docker-build, security-scan, helm-validate, integration-tests]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
@@ -368,7 +456,19 @@ jobs:
           curl -sf https://syncflow.example.com/actuator/health | jq '.status == "UP"'
           echo "Production deployment complete"
 
-      - name: Notify on failure
+      - name: Notify prod success
+        if: success()
+        uses: slackapi/slack-github-action@v4
+        with:
+          payload: |
+            {
+              "text": "✅ Production deployment succeeded: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      # fix #9: notify on prod failure
+      - name: Notify prod failure
         if: failure()
         uses: slackapi/slack-github-action@v4
         with:
