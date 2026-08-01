@@ -197,6 +197,14 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
+      - name: Cache NVD database
+        uses: actions/cache@v6
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: nvd-${{ runner.os }}-${{ hashFiles('**/build.gradle') }}
+          restore-keys: |
+            nvd-${{ runner.os }}-
+
       - name: Dependency Check
         run: ./gradlew dependencyCheckAnalyze
         env:
