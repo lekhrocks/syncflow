@@ -1,6 +1,7 @@
 plugins {
     id "java-library"
     id "info.solidsoft.pitest" version "1.19.0"
+    id "me.champeau.jmh" version "0.7.3"
 }
 
 dependencies {
@@ -15,6 +16,9 @@ dependencies {
     testImplementation libs.junit.platform.launcher
     testImplementation libs.mockito.core
     testImplementation libs.mockito.junit.jupiter
+
+    jmh "org.openjdk.jmh:jmh-core:1.37"
+    jmhAnnotationProcessor "org.openjdk.jmh:jmh-generator-annprocess:1.37"
 }
 
 pitest {
@@ -25,6 +29,14 @@ pitest {
     outputFormats    = ["HTML", "XML"]
     timestampedReports = false
     failWhenNoMutations = false
+}
+
+jmh {
+    warmupIterations  = 1
+    iterations        = 3
+    fork              = 1
+    resultFormat      = "JSON"
+    resultsFile       = project.file("${project.buildDir}/reports/jmh/results.json")
 }
 
 tasks.named("jar") { enabled = true }
