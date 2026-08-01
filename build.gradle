@@ -1,6 +1,7 @@
 plugins {
     id "java"
     id "com.diffplug.spotless" version "7.0.2"
+    id "org.owasp.dependencycheck" version "12.1.3"
 }
 
 group = "com.syncflow"
@@ -14,6 +15,24 @@ spotless {
         removeUnusedImports()
         eclipse().configFile(rootProject.file("gradle/eclipse-formatter.xml"))
     }
+}
+
+// ──────────────────────────────────────────────
+//  OWASP Dependency-Check
+// ──────────────────────────────────────────────
+
+dependencyCheck {
+    failBuildOnCVSS = 9           // only fail on critical (CVSS >= 9)
+    suppressionFile = "gradle/dependency-check-suppressions.xml"
+    nvd {
+        apiKey = System.getenv("NVD_API_KEY") ?: ""
+    }
+    analyzers {
+        nodeAuditEnabled = false   // handled separately by npm audit
+        retirejs { enabled = false }
+    }
+    formats = ["HTML", "SARIF"]
+    outputDirectory = layout.buildDirectory.dir("reports/dependency-check").get().asFile
 }
 
 // ──────────────────────────────────────────────
