@@ -8,6 +8,11 @@ public interface EventPublisher extends AutoCloseable {
 
     void flush();
 
+    /**
+     * Returns the number of events currently held / processed by this publisher.
+     */
+    long count();
+
     @Override
     void close();
 }

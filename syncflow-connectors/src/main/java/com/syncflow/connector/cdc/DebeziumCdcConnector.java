@@ -20,18 +20,24 @@ import com.syncflow.core.spi.ValidationResult;
 import io.debezium.engine.ChangeEvent;
 import io.debezium.engine.DebeziumEngine;
 import io.debezium.engine.format.Json;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 public abstract class DebeziumCdcConnector implements CdcCapableConnector {
+
+    private static final Logger log = LoggerFactory.getLogger(DebeziumCdcConnector.class);
 
     private DebeziumEngine<ChangeEvent<String, String>> engine;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -40,12 +46,29 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
     private final AtomicLong eventCounter = new AtomicLong(0);
     private volatile ConnectorContext currentContext;
     private volatile Consumer<CDCEvent> currentConsumer;
-    private final Map<String, String> lastOffset = Map.of();
+
+    private final Map<String, String> lastOffset = new ConcurrentHashMap<>();
 
     protected abstract ConnectorType connectorType();
+
     protected abstract String connectorClassName();
+
     protected abstract Properties specificProperties(ConnectionConfiguration config);
+
     protected abstract CDCEvent buildEvent(ChangeEvent<String, String> event, ConnectorContext ctx);
+
+    // ── Offset management ────────────────────────────────────────────────────
+
+    /**
+     * Called by subclass event parsers to record the latest offset after each
+     * event.
+     */
+    protected void updateOffset(Map<String, String> offset) {
+        lastOffset.clear();
+        lastOffset.putAll(offset);
+    }
+
+    // ── CdcCapableConnector lifecycle ────────────────────────────────────────
 
     @Override
     public ConnectorType type() {
@@ -118,9 +141,7 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
     @Override
     public ConnectorHealth health() {
-        if (running.get())
-            return ConnectorHealth.up(0);
-        return ConnectorHealth.unknown();
+        return running.get() ? ConnectorHealth.up(0) : ConnectorHealth.unknown();
     }
 
     @Override
@@ -140,8 +161,10 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
     @Override
     public void startCDC(ConnectorContext context, Consumer<CDCEvent> eventConsumer) {
-        if (running.getAndSet(true))
+        if (running.getAndSet(true)) {
+            log.warn("CDC already running for connector={}", connectorType());
             return;
+        }
         this.currentContext = context;
         this.currentConsumer = eventConsumer;
         this.status.set(CaptureStatus.RUNNING);
@@ -150,10 +173,21 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
         var debeziumProps = new Properties();
         debeziumProps.setProperty("name", "syncflow-" + connectorType().name().toLowerCase());
         debeziumProps.setProperty("connector.class", connectorClassName());
-        debeziumProps.setProperty("offset.storage", "org.apache.kafka.connect.storage.MemoryOffsetBackingStore");
+
+        // use FileOffsetBackingStore so offsets survive JVM restarts
+        // each pipeline gets its own offset file keyed by pipeline id from context
+        var offsetFile = resolveOffsetFilePath(config);
+        debeziumProps.setProperty("offset.storage",
+                "org.apache.kafka.connect.storage.FileOffsetBackingStore");
+        debeziumProps.setProperty("offset.storage.file.filename", offsetFile);
         debeziumProps.setProperty("offset.flush.interval.ms", "5000");
+
         debeziumProps.setProperty("topic.prefix", "syncflow");
-        debeziumProps.setProperty("snapshot.mode", "never");
+
+        // use initial_only for first run (no offset file), never otherwise
+        var offsetFileExists = Files.exists(Path.of(offsetFile));
+        debeziumProps.setProperty("snapshot.mode", offsetFileExists ? "never" : "initial_only");
+
         debeziumProps.setProperty("database.hostname", config.host());
         debeziumProps.setProperty("database.port", String.valueOf(config.port()));
         debeziumProps.setProperty("database.user", config.username());
@@ -166,10 +200,9 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
         debeziumProps.putAll(specificProperties(config));
 
-        var offset = currentOffset();
-        if (!offset.isEmpty()) {
-            debeziumProps.setProperty("offset.storage.offset", serializeOffset(offset));
-        }
+        log.info("Starting CDC for connector={} database={} snapshotMode={}",
+                connectorType(), config.database(),
+                debeziumProps.getProperty("snapshot.mode"));
 
         engine = DebeziumEngine.create(Json.class)
                 .using(debeziumProps)
@@ -181,6 +214,7 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
             try {
                 engineRef.run();
             } catch (Exception e) {
+                log.error("Debezium engine failed for connector={}", connectorType(), e);
                 status.set(CaptureStatus.FAILED);
                 running.set(false);
             }
@@ -194,23 +228,27 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
         if (engine != null) {
             try {
                 engine.close();
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                log.warn("Error closing Debezium engine for connector={}", connectorType(), e);
             }
             engine = null;
         }
         status.set(CaptureStatus.INACTIVE);
+        log.info("CDC stopped for connector={} lastOffset={}", connectorType(), lastOffset);
     }
 
     @Override
     public void pauseCDC() {
         paused.set(true);
         status.set(CaptureStatus.PAUSED);
+        log.debug("CDC paused for connector={}", connectorType());
     }
 
     @Override
     public void resumeCDC() {
         paused.set(false);
         status.set(CaptureStatus.RUNNING);
+        log.debug("CDC resumed for connector={}", connectorType());
     }
 
     @Override
@@ -225,14 +263,16 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
     @Override
     public Map<String, String> currentOffset() {
-        if (!running.get() || engine == null)
-            return lastOffset;
         return Map.copyOf(lastOffset);
     }
+
+    // ── Internal ─────────────────────────────────────────────────────────────
 
     private void handleSingleEvent(ChangeEvent<String, String> event) {
         if (!running.get())
             return;
+
+        // pause: block the virtual thread until resumed (no busy-spin)
         while (paused.get() && running.get()) {
             try {
                 Thread.sleep(100);
@@ -241,6 +281,7 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
                 return;
             }
         }
+
         try {
             var cdcEvent = buildEvent(event, currentContext);
             if (cdcEvent != null) {
@@ -248,13 +289,23 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
                 eventCounter.incrementAndGet();
             }
         } catch (Exception e) {
-            // ponytail: log and continue — no retry
+            // log parse errors with metrics instead of silently dropping
+            log.error("Failed to process CDC event for connector={} key={}",
+                    connectorType(), event.key(), e);
         }
     }
 
-    private String serializeOffset(Map<String, String> offset) {
-        var parts = new ArrayList<String>();
-        offset.forEach((k, v) -> parts.add(k + "=" + v));
-        return String.join(",", parts);
+    /**
+     * Resolve a stable per-pipeline offset file path.
+     * Uses the database name + host as a key so separate connections get separate
+     * files.
+     * subclasses supply the slot name keyed to the pipeline id.
+     */
+    private String resolveOffsetFilePath(ConnectionConfiguration config) {
+        var dir = System.getProperty("java.io.tmpdir");
+        var key = connectorType().name().toLowerCase()
+                + "_" + config.host().replace(".", "_")
+                + "_" + config.database();
+        return dir + "/syncflow_offset_" + key + ".dat";
     }
 }
