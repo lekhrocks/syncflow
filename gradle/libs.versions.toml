@@ -66,7 +66,7 @@ logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "lo
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
 
-junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version = "5.12.2" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version = "6.1.2" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version = "1.12.2" }
 mockito-core = { module = "org.mockito:mockito-core", version = "5.17.0" }
 mockito-junit-jupiter = { module = "org.mockito:mockito-junit-jupiter", version = "5.17.0" }
