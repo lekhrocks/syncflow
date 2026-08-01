@@ -195,6 +195,8 @@ jobs:
 
       - name: Dependency Check
         run: ./gradlew dependencyCheckAnalyze
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         continue-on-error: true
 
   docker-build:
