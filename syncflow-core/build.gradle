@@ -1,5 +1,6 @@
 plugins {
     id "java-library"
+    id "info.solidsoft.pitest" version "1.19.0"
 }
 
 dependencies {
@@ -14,6 +15,16 @@ dependencies {
     testImplementation libs.junit.platform.launcher
     testImplementation libs.mockito.core
     testImplementation libs.mockito.junit.jupiter
+}
+
+pitest {
+    junit5PluginVersion = "1.2.1"
+    targetClasses    = ["com.syncflow.core.*"]
+    targetTests      = ["com.syncflow.core.*"]
+    mutators         = ["DEFAULTS"]
+    outputFormats    = ["HTML", "XML"]
+    timestampedReports = false
+    failWhenNoMutations = false
 }
 
 tasks.named("jar") { enabled = true }
