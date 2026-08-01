@@ -26,6 +26,7 @@ public class InMemoryEventPublisher implements EventPublisher {
         return List.copyOf(events);
     }
 
+    @Override
     public long count() {
         return events.size();
     }
