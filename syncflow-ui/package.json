@@ -14,7 +14,7 @@
     "@mantine/code-highlight": "^7.17.0",
     "@mantine/core": "^7.17.0",
     "@mantine/form": "^7.17.0",
-    "@mantine/hooks": "^7.17.0",
+    "@mantine/hooks": "^9.5.0",
     "@mantine/notifications": "^7.17.0",
     "@monaco-editor/react": "^4.7.0",
     "@tabler/icons-react": "^3.31.0",
