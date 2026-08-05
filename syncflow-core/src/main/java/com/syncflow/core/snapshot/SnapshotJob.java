@@ -1,5 +1,7 @@
 package com.syncflow.core.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 
 import java.time.Instant;
@@ -26,15 +28,21 @@ public class SnapshotJob {
         this.createdAt = Instant.now();
     }
 
-    private SnapshotJob(SnapshotId id, String pipelineId, SnapshotStatus status,
-            SnapshotStatistics statistics, SnapshotProgress progress,
-            List<SnapshotError> errors, Instant createdAt) {
+    @JsonCreator
+    private SnapshotJob(
+            @JsonProperty("id") SnapshotId id,
+            @JsonProperty("pipelineId") String pipelineId,
+            @JsonProperty("status") SnapshotStatus status,
+            @JsonProperty("statistics") SnapshotStatistics statistics,
+            @JsonProperty("progress") SnapshotProgress progress,
+            @JsonProperty("errors") List<SnapshotError> errors,
+            @JsonProperty("createdAt") Instant createdAt) {
         this.id = id;
         this.pipelineId = pipelineId;
         this.status = status;
         this.statistics = statistics;
-        this.progress = progress;
-        this.errors = errors;
+        this.progress = progress != null ? progress : SnapshotProgress.starting(0);
+        this.errors = errors != null ? List.copyOf(errors) : List.of();
         this.createdAt = createdAt;
     }
 

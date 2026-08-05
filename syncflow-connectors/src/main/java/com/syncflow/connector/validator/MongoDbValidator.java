@@ -19,11 +19,15 @@ public class MongoDbValidator implements ConnectionValidator {
 
     @Override
     public DetailedValidationResult validate(ConnectionProperties props, Credentials credentials) {
-        // ponytail: MongoDB validation via connection string.
-        // Uses MongoDB driver directly when added as a dependency.
-        // For now validates host/port/credentials format without a live connection.
-        var uri = "mongodb://" + credentials.username() + ":" + credentials.password()
-                + "@" + props.host() + ":" + props.port() + "/" + props.database();
+        // Build a MongoDB URI. When username is blank (no-auth container), omit credentials.
+        var hasAuth = credentials != null && !credentials.username().isBlank();
+        String uri;
+        if (hasAuth) {
+            uri = "mongodb://" + credentials.username() + ":" + credentials.password()
+                    + "@" + props.host() + ":" + props.port() + "/" + props.database();
+        } else {
+            uri = "mongodb://" + props.host() + ":" + props.port() + "/" + props.database();
+        }
         try {
             var start = System.currentTimeMillis();
             var client = com.mongodb.client.MongoClients.create(uri);

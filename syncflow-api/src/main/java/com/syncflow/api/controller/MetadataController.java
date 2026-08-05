@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/connections/{id}/metadata")
+@RequestMapping("/api/connections/{id}")
 public class MetadataController {
 
     private final MetadataDiscoveryService discoveryService;
@@ -24,27 +24,36 @@ public class MetadataController {
         this.discoveryService = discoveryService;
     }
 
-    @GetMapping
+    /** GET /api/connections/{id}/metadata — returns schemas */
+    @GetMapping("/metadata")
     public ResponseEntity<MetadataResponse<SchemaMetadata>> getSchemas(@PathVariable String id) {
         return ResponseEntity.ok(discoveryService.discoverSchemas(id));
     }
 
-    @GetMapping("/schemas")
+    /** GET /api/connections/{id}/metadata/schemas */
+    @GetMapping("/metadata/schemas")
     public ResponseEntity<MetadataResponse<SchemaMetadata>> getSchemasAlt(@PathVariable String id) {
         return ResponseEntity.ok(discoveryService.discoverSchemas(id));
     }
 
+    /** GET /api/connections/{id}/schemas/{schema}/tables (direct path used by tests) */
     @GetMapping("/schemas/{schema}/tables")
     public ResponseEntity<MetadataResponse<TableMetadata>> getTables(
             @PathVariable String id, @PathVariable String schema) {
         return ResponseEntity.ok(discoveryService.discoverTables(id, schema));
     }
 
-    @GetMapping("/schemas/{schema}/tables/{table}")
+    /** GET /api/connections/{id}/metadata/schemas/{schema}/tables */
+    @GetMapping("/metadata/schemas/{schema}/tables")
+    public ResponseEntity<MetadataResponse<TableMetadata>> getTablesAlt(
+            @PathVariable String id, @PathVariable String schema) {
+        return ResponseEntity.ok(discoveryService.discoverTables(id, schema));
+    }
+
+    @GetMapping({"/schemas/{schema}/tables/{table}", "/metadata/schemas/{schema}/tables/{table}"})
     public ResponseEntity<MetadataResponse<TableMetadata>> getTable(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
-        // ponytail: full table detail = tables list filtered by name
         var resp = discoveryService.discoverTables(id, schema);
         var filtered = resp.data().stream()
                 .filter(t -> t.name().equals(table))
@@ -54,28 +63,28 @@ public class MetadataController {
         return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/schemas/{schema}/tables/{table}/columns")
+    @GetMapping({"/schemas/{schema}/tables/{table}/columns", "/metadata/schemas/{schema}/tables/{table}/columns"})
     public ResponseEntity<MetadataResponse<ColumnMetadata>> getColumns(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
         return ResponseEntity.ok(discoveryService.discoverColumns(id, schema, table));
     }
 
-    @GetMapping("/schemas/{schema}/tables/{table}/indexes")
+    @GetMapping({"/schemas/{schema}/tables/{table}/indexes", "/metadata/schemas/{schema}/tables/{table}/indexes"})
     public ResponseEntity<MetadataResponse<IndexMetadata>> getIndexes(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
         return ResponseEntity.ok(discoveryService.discoverIndexes(id, schema, table));
     }
 
-    @GetMapping("/schemas/{schema}/tables/{table}/constraints")
+    @GetMapping({"/schemas/{schema}/tables/{table}/constraints", "/metadata/schemas/{schema}/tables/{table}/constraints"})
     public ResponseEntity<MetadataResponse<ConstraintMetadata>> getConstraints(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
         return ResponseEntity.ok(discoveryService.discoverConstraints(id, schema, table));
     }
 
-    @PostMapping("/refresh")
+    @PostMapping({"/metadata/refresh", "/schemas/refresh"})
     public ResponseEntity<Void> refresh(@PathVariable String id) {
         discoveryService.refresh(id);
         return ResponseEntity.ok().build();
