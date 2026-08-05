@@ -1,31 +1,18 @@
 package com.syncflow.api.db;
 
+import com.syncflow.api.config.AbstractIntegrationTest;
 import com.syncflow.api.connection.repository.ConnectionRepository;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class DatabaseMigrationValidationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("syncflow")
-            .withUsername("syncflow")
-            .withPassword("syncflow");
+class DatabaseMigrationValidationTest extends AbstractIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -33,15 +20,21 @@ class DatabaseMigrationValidationTest {
     @Autowired
     private ConnectionRepository connectionRepository;
 
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+            .withDatabaseName("syncflow")
+            .withUsername("syncflow")
+            .withPassword("syncflow");
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry r) {
         r.add("spring.datasource.url", postgres::getJdbcUrl);
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
         r.add("spring.flyway.enabled", () -> "true");
+        r.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
         r.add("spring.flyway.baseline-on-migrate", () -> "true");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
-        r.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
     }
 
     @Test

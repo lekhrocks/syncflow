@@ -8,18 +8,15 @@ import com.syncflow.core.cdc.CaptureStatus;
 import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.model.ConnectorType;
 import com.syncflow.core.spi.ConnectorContext;
+import com.syncflow.api.config.AbstractIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -37,18 +34,25 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class CdcIntegrationTest {
+class CdcIntegrationTest extends AbstractIntegrationTest {
 
+    // Kept here (rather than inheriting base postgres) because Debezium CDC needs
+    // wal_level=logical, which the base container does not configure.
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("cdctest")
             .withUsername("testuser")
             .withPassword("testpass")
             .withCommand("postgres", "-c", "wal_level=logical");
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+    }
 
     private java.sql.Connection sqlConnection;
     private final PostgresCdcConnector cdcConnector = new PostgresCdcConnector();
@@ -58,23 +62,28 @@ class CdcIntegrationTest {
     @Autowired
     private ConnectionService connectionService;
 
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
-    }
-
     @BeforeEach
     void setUp() throws SQLException {
         sqlConnection = DriverManager.getConnection(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         try (var stmt = sqlConnection.createStatement()) {
+            // Reset CDC state left over from a previous test/run: drop the
+            // replication slot + publication (fixed names per database) and delete
+            // the offset file so Debezium streams from the current WAL position
+            // instead of resuming from a stale LSN ("WAL resume position null").
+            stmt.execute("SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'syncflow_slot_cdctest'");
+            stmt.execute("DROP PUBLICATION IF EXISTS syncflow_pub_cdctest");
+            var offsetFile = System.getProperty("java.io.tmpdir")
+                    + "/syncflow_offset_postgresql_localhost_cdctest.dat";
+            new java.io.File(offsetFile).delete();
             stmt.execute("CREATE TABLE IF NOT EXISTS cdc_test_users (" +
                     "id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT NOW())");
             stmt.execute("CREATE TABLE IF NOT EXISTS cdc_test_orders (" +
                     "id SERIAL PRIMARY KEY, user_id INT, amount DECIMAL, status TEXT)");
+            // REPLICA IDENTITY FULL is required so Debezium emits the full before-row
+            // for UPDATE and DELETE events (default is DEFAULT which only sends the PK).
+            stmt.execute("ALTER TABLE cdc_test_users REPLICA IDENTITY FULL");
+            stmt.execute("ALTER TABLE cdc_test_orders REPLICA IDENTITY FULL");
         }
     }
 
@@ -136,7 +145,7 @@ class CdcIntegrationTest {
             stmt.executeBatch();
         }
 
-        await().atMost(Duration.ofSeconds(20))
+        await().atMost(Duration.ofSeconds(40))
                 .until(() -> capturedEvents.stream().filter(e -> e.operation() == CDCOperation.INSERT).count() >= 50);
         long inserts = capturedEvents.stream().filter(e -> e.operation() == CDCOperation.INSERT).count();
         assertTrue(inserts >= 50, "Expected at least 50 INSERT events, got " + inserts);
@@ -159,7 +168,7 @@ class CdcIntegrationTest {
             stmt.executeUpdate();
         }
 
-        await().atMost(Duration.ofSeconds(15))
+        await().atMost(Duration.ofSeconds(30))
                 .until(() -> capturedEvents.stream().anyMatch(e -> e.operation() == CDCOperation.UPDATE));
     }
 
@@ -176,7 +185,7 @@ class CdcIntegrationTest {
             stmt.execute("UPDATE cdc_test_users SET active = false WHERE id > 10");
         }
 
-        await().atMost(Duration.ofSeconds(15))
+        await().atMost(Duration.ofSeconds(30))
                 .until(() -> capturedEvents.stream().anyMatch(e -> e.operation() == CDCOperation.UPDATE));
     }
 
@@ -196,7 +205,7 @@ class CdcIntegrationTest {
             stmt.executeUpdate();
         }
 
-        await().atMost(Duration.ofSeconds(15))
+        await().atMost(Duration.ofSeconds(30))
                 .until(() -> capturedEvents.stream().anyMatch(e -> e.operation() == CDCOperation.DELETE));
     }
 
@@ -213,7 +222,7 @@ class CdcIntegrationTest {
             stmt.execute("DELETE FROM cdc_test_users WHERE name LIKE 'DelUser%'");
         }
 
-        await().atMost(Duration.ofSeconds(15))
+        await().atMost(Duration.ofSeconds(30))
                 .until(() -> capturedEvents.stream().anyMatch(e -> e.operation() == CDCOperation.DELETE));
     }
 

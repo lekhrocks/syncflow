@@ -1,25 +1,20 @@
 package com.syncflow.api.metadata;
 
+import com.syncflow.api.config.AbstractIntegrationTest;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.core.connection.ConnectionProperties;
 import com.syncflow.core.connection.ConnectionType;
 import com.syncflow.core.connection.Credentials;
-import io.restassured.RestAssured;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
 
@@ -29,11 +24,12 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class MetadataIntegrationTest {
+class MetadataIntegrationTest extends AbstractIntegrationTest {
+
+    @Autowired
+    private ConnectionService connectionService;
+
+    private String connectionId;
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -41,28 +37,18 @@ class MetadataIntegrationTest {
             .withUsername("testuser")
             .withPassword("testpass");
 
-    @LocalServerPort
-    private int port;
-
-    @Autowired
-    private ConnectionService connectionService;
-
-    private String connectionId;
-
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
 
     @BeforeEach
     void setUp() {
-        RestAssured.port = port;
-
         // Create a test connection pointing to the Testcontainers PostgreSQL
         var props = new ConnectionProperties(ConnectionType.POSTGRESQL,
                 postgres.getHost(), postgres.getMappedPort(5432), "metadatatest", Map.of());

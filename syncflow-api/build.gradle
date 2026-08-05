@@ -18,6 +18,7 @@ dependencies {
     implementation libs.spring.boot.starter.actuator
     implementation libs.spring.boot.starter.security
     implementation libs.spring.doc.openapi.starter.webmvc.ui
+    implementation libs.kafka.clients
     implementation libs.flyway.core
     implementation libs.flyway.database.postgresql
     implementation libs.postgresql
@@ -34,6 +35,7 @@ dependencies {
         exclude group: "org.junit.vintage", module: "junit-vintage-engine"
     }
     testImplementation libs.testcontainers.postgresql
+    testImplementation libs.testcontainers.kafka
     testImplementation libs.testcontainers.junit.jupiter
     testImplementation libs.awaitility
     testImplementation libs.archunit.junit5

@@ -1,6 +1,10 @@
 package com.syncflow.api.cdc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncflow.api.connection.service.ConnectionService;
+import com.syncflow.api.kafka.KafkaCdcConsumer;
+import com.syncflow.api.kafka.KafkaProperties;
+import com.syncflow.api.kafka.KafkaTopicProvisioner;
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.core.cdc.CaptureStatus;
 import com.syncflow.core.connection.Connection;
@@ -57,13 +61,21 @@ class CaptureLifecycleUnitTest {
     private OffsetStore offsetStore;
     @Mock
     private CdcCapableConnector cdcConnector;
+    @Mock
+    private KafkaProperties kafkaProperties;
+    @Mock
+    private KafkaTopicProvisioner topicProvisioner;
+    @Mock
+    private KafkaCdcConsumer kafkaCdcConsumer;
 
     private CaptureLifecycle lifecycle;
 
     @BeforeEach
     void setUp() {
         lifecycle = new CaptureLifecycle(pipelineService, connectionService,
-                connectorRegistry, offsetStore, new SimpleMeterRegistry());
+                connectorRegistry, offsetStore, new SimpleMeterRegistry(),
+                new ObjectMapper(), Optional.of(kafkaProperties),
+                Optional.of(topicProvisioner), Optional.of(kafkaCdcConsumer));
     }
 
     // ── Test data helpers ────────────────────────────────────────────────────
@@ -98,6 +110,8 @@ class CaptureLifecycleUnitTest {
         org.mockito.Mockito.lenient()
                 .when(cdcConnector.captureStatus()).thenReturn(CaptureStatus.INACTIVE);
         when(offsetStore.get(pipelineId)).thenReturn(Map.of());
+        // Kafka disabled → bounded-queue path, no Kafka components started
+        when(kafkaProperties.isEnabled()).thenReturn(false);
     }
 
     // ── start() ──────────────────────────────────────────────────────────────

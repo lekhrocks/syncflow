@@ -1,5 +1,11 @@
 package com.syncflow.api.sync;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.syncflow.api.sync.entity.DeadLetterEventEntity;
+import com.syncflow.api.sync.entity.ProcessedEventEntity;
+import com.syncflow.api.sync.repository.DeadLetterEventRepository;
+import com.syncflow.api.sync.repository.ProcessedEventRepository;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.cdc.CDCOperation;
 import com.syncflow.core.cdc.EventHeader;
@@ -18,12 +24,19 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class SyncEngineUnitTest {
 
-    private final DeadLetterQueue dlq = new DeadLetterQueue();
+    private final DeadLetterEventRepository dlqRepo = mock(DeadLetterEventRepository.class);
+    private final ProcessedEventRepository processedRepo = mock(ProcessedEventRepository.class);
+    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private final DeadLetterQueue dlq = new DeadLetterQueue(dlqRepo, objectMapper);
     private final RetryEngine retry = new RetryEngine(dlq, new SimpleMeterRegistry());
-    private final EventIdempotencyStore idempotency = new EventIdempotencyStore();
+    private final EventIdempotencyStore idempotency = new EventIdempotencyStore(processedRepo);
     private final DestinationRouterStub router = new DestinationRouterStub();
 
     // --- Transformation (simulated via the chain used in SyncOrchestrator) ---
@@ -133,7 +146,8 @@ class SyncEngineUnitTest {
         // 4th attempt → DLQ
         var finalDecision = retry.evaluate("p-1", event, reason);
         assertFalse(finalDecision.shouldRetry());
-        assertEquals(1, dlq.count());
+        // event was persisted to the DLQ repo
+        verify(dlqRepo).save(any(DeadLetterEventEntity.class));
     }
 
     @Test
@@ -156,18 +170,17 @@ class SyncEngineUnitTest {
         var event = createTestEvent("evt-4");
         var decision = retry.evaluate("p-1", event, FailureReason.permanentError("invalid schema"));
         assertFalse(decision.shouldRetry());
-        assertEquals(1, dlq.count());
+        verify(dlqRepo).save(any(DeadLetterEventEntity.class));
     }
 
     // --- Conflict resolution ---
 
     @Test
     void conflictDetectedByPrimaryKey() {
-        // Two events with same PK should result in one processed
-        var event1 = createTestEvent("evt-5");
-        var event2 = createTestEvent("evt-5"); // Same eventId = duplicate
-        idempotency.markProcessed(event1.header().eventId());
-        assertTrue(idempotency.isProcessed(event2.header().eventId()));
+        // Same eventId is flagged as already processed once persisted
+        when(processedRepo.existsByEventId("evt-5")).thenReturn(true);
+        var event = createTestEvent("evt-5");
+        assertTrue(idempotency.isProcessed(event.header().eventId()));
     }
 
     // --- Deduplication ---
@@ -175,21 +188,25 @@ class SyncEngineUnitTest {
     @Test
     void deduplicationPreventsDuplicateProcessing() {
         var event = createTestEvent("evt-6");
+        when(processedRepo.existsByEventId("evt-6")).thenReturn(false);
         assertFalse(idempotency.isProcessed(event.header().eventId()));
+
         idempotency.markProcessed(event.header().eventId());
+        verify(processedRepo).save(any(ProcessedEventEntity.class));
+
+        // a second occurrence is now seen as processed
+        when(processedRepo.existsByEventId("evt-6")).thenReturn(true);
         assertTrue(idempotency.isProcessed(event.header().eventId()));
-        // Marking again is idempotent
-        idempotency.markProcessed(event.header().eventId());
-        assertEquals(1, idempotency.size());
     }
 
     @Test
     void deduplicationEviction() {
         var event = createTestEvent("evt-7");
-        idempotency.markProcessed(event.header().eventId());
+        when(processedRepo.existsByEventId("evt-7")).thenReturn(true);
         assertTrue(idempotency.isProcessed(event.header().eventId()));
+
         idempotency.evict(event.header().eventId());
-        assertFalse(idempotency.isProcessed(event.header().eventId()));
+        verify(processedRepo).deleteById("evt-7");
     }
 
     // --- DLQ logic ---
@@ -198,14 +215,18 @@ class SyncEngineUnitTest {
     void dlqStoresFailedEvent() {
         var event = createTestEvent("evt-8");
         dlq.add("p-1", event, FailureReason.permanentError("bad data"), 3);
-        assertEquals(1, dlq.count());
+        verify(dlqRepo).save(any(DeadLetterEventEntity.class));
     }
 
     @Test
     void dlqListFilteredByPipeline() {
-        dlq.add("p-1", createTestEvent("e1"), FailureReason.permanentError("err1"), 1);
-        dlq.add("p-2", createTestEvent("e2"), FailureReason.permanentError("err2"), 1);
-        dlq.add("p-1", createTestEvent("e3"), FailureReason.permanentError("err3"), 2);
+        var e1 = dlqEntity("d1", "p-1", "e1");
+        var e2 = dlqEntity("d2", "p-2", "e2");
+        var e3 = dlqEntity("d3", "p-1", "e3");
+        when(dlqRepo.findByPipelineIdOrderByCreatedAtDesc("p-1"))
+                .thenReturn(List.of(e1, e3));
+        when(dlqRepo.findByPipelineIdOrderByCreatedAtDesc("p-2"))
+                .thenReturn(List.of(e2));
 
         var p1Events = dlq.list("p-1");
         assertEquals(2, p1Events.size());
@@ -214,29 +235,27 @@ class SyncEngineUnitTest {
     }
 
     @Test
-    void dlqReplayRemovesEvent() {
-        var event = createTestEvent("evt-9");
-        dlq.add("p-1", event, FailureReason.permanentError("err"), 3);
-        assertEquals(1, dlq.count());
-        dlq.add("p-1", event, FailureReason.permanentError("err"), 3);
-        assertEquals(2, dlq.count());
-    }
-
-    @Test
     void dlqDeleteById() {
-        dlq.add("p-1", createTestEvent("e_del"), FailureReason.permanentError("err"), 2);
-        assertEquals(1, dlq.count());
-        // Delete via list + extract ID
-        var all = dlq.list(null);
-        dlq.delete(all.getFirst().id());
-        assertEquals(0, dlq.count());
+        dlq.delete("d_del");
+        verify(dlqRepo).deleteById("d_del");
     }
 
     @Test
     void dlqListAllWhenPipelineIsNull() {
-        dlq.add("p-1", createTestEvent("e1"), FailureReason.permanentError("e"), 1);
-        dlq.add("p-2", createTestEvent("e2"), FailureReason.permanentError("e"), 1);
+        var e1 = dlqEntity("d1", "p-1", "e1");
+        var e2 = dlqEntity("d2", "p-2", "e2");
+        when(dlqRepo.findAll()).thenReturn(List.of(e1, e2));
         assertEquals(2, dlq.list(null).size());
+    }
+
+    private DeadLetterEventEntity dlqEntity(String id, String pipelineId, String eventId) {
+        var entity = new DeadLetterEventEntity();
+        entity.setId(id);
+        entity.setPipelineId(pipelineId);
+        entity.setEventId(eventId);
+        entity.setEventData("{}");
+        entity.setFailureType("PERMANENT");
+        return entity;
     }
 
     // --- Ordering logic ---

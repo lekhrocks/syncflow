@@ -1,5 +1,6 @@
 package com.syncflow.api.samples;
 
+import com.syncflow.api.config.AbstractIntegrationTest;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.metadata.MetadataDiscoveryService;
 import com.syncflow.api.pipeline.PipelineDesignerService;
@@ -10,16 +11,13 @@ import com.syncflow.core.pipeline.mapping.*;
 import com.syncflow.core.pipeline.transform.TransformationRule;
 import com.syncflow.core.pipeline.filter.*;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.sql.DriverManager;
@@ -39,11 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 4. Run snapshot
  * 5. Verify data in source exists and pipeline completes
  */
-@SpringBootTest
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class PgMongoSampleE2eTest {
+class PgMongoSampleE2eTest extends AbstractIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -57,6 +51,15 @@ class PgMongoSampleE2eTest {
             .waitingFor(Wait.forLogMessage(".*Waiting for connections.*", 1))
             .withStartupTimeout(Duration.ofSeconds(60));
 
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+    }
+
     @Autowired
     private ConnectionService connectionService;
 
@@ -68,15 +71,6 @@ class PgMongoSampleE2eTest {
 
     private String pgConnectionId;
     private String mongoConnectionId;
-
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.flyway.enabled", () -> "true");
-        r.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
-    }
 
     @BeforeEach
     void setUp() throws Exception {
@@ -93,6 +87,8 @@ class PgMongoSampleE2eTest {
                             deleted_at TIMESTAMP DEFAULT NULL
                         )
                     """);
+            // Clear before seeding so each test starts with exactly 3 rows
+            stmt.execute("TRUNCATE TABLE users RESTART IDENTITY");
             stmt.execute("""
                         INSERT INTO users (email, full_name) VALUES
                             ('Alice@Example.COM', 'Alice Johnson'),

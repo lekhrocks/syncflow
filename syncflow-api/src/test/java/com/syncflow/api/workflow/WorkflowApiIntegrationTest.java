@@ -1,19 +1,13 @@
 package com.syncflow.api.workflow;
 
+import com.syncflow.api.config.AbstractIntegrationTest;
 import com.syncflow.core.workflow.WorkflowInstance;
-import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
 
@@ -25,20 +19,13 @@ import static org.hamcrest.Matchers.isA;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class WorkflowApiIntegrationTest {
+class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("workflowtest")
             .withUsername("testuser")
             .withPassword("testpass");
-
-    @LocalServerPort
-    private int port;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -47,11 +34,6 @@ class WorkflowApiIntegrationTest {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
-    }
-
-    @BeforeEach
-    void setUp() {
-        RestAssured.port = port;
     }
 
     // --- Sequential workflow ---
