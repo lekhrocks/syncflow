@@ -4,9 +4,24 @@ import type {
   TestConnectionResponse, ConnectionHealthResponse, MetadataResponse,
   SchemaMetadata, ColumnMetadata, IndexMetadata, ConstraintMetadata,
   DashboardOverview, AuditEvent, AlertEvent, SystemDiagnostics,
+  UserResponse, CreateUserRequest, UpdateUserRequest, LoginResponse,
 } from '../types/api';
 
 const api = axios.create({ baseURL: '/api' });
+
+let authToken: string | null = null;
+
+/** Set/clear the bearer token attached to all /api requests. */
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
+
+api.interceptors.request.use((config) => {
+  if (authToken) {
+    config.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return config;
+});
 
 // --- Connections ---
 export const connectionApi = {
@@ -52,6 +67,25 @@ export const alertApi = {
 // --- Diagnostics ---
 export const diagnosticsApi = {
   system: () => api.get<SystemDiagnostics>('/diagnostics/system').then(r => r.data),
+};
+
+// --- Auth ---
+export const authApi = {
+  login: (username: string, password: string) =>
+    api.post<LoginResponse>('/auth/login', { username, password }).then(r => r.data),
+  me: () => api.get<UserResponse>('/auth/me').then(r => r.data),
+  changePassword: (newPassword: string) =>
+    api.post('/auth/change-password', { newPassword }).then(r => r.data),
+};
+
+// --- Users ---
+export const userApi = {
+  list: () => api.get<UserResponse[]>('/users').then(r => r.data),
+  get: (id: string) => api.get<UserResponse>(`/users/${id}`).then(r => r.data),
+  create: (req: CreateUserRequest) => api.post<UserResponse>('/users', req).then(r => r.data),
+  update: (id: string, req: UpdateUserRequest) => api.put<UserResponse>(`/users/${id}`, req).then(r => r.data),
+  setRoles: (id: string, roles: string) => api.post<UserResponse>(`/users/${id}/roles`, { roles }).then(r => r.data),
+  delete: (id: string) => api.delete(`/users/${id}`),
 };
 
 export default api;
