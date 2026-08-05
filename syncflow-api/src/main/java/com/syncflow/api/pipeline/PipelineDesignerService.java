@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 @Service
-@Transactional
 public class PipelineDesignerService {
 
     private final PipelineDesignJpaRepository designRepo;
@@ -78,6 +77,7 @@ public class PipelineDesignerService {
                 .toList();
     }
 
+    @Transactional
     public PipelineDesign update(String id, PipelineName name,
             SourceReference source,
             DestinationReference destination,
@@ -98,6 +98,7 @@ public class PipelineDesignerService {
         return updated;
     }
 
+    @Transactional
     public void delete(String id) {
         if (!designRepo.existsById(id)) {
             throw new NoSuchElementException("Pipeline not found: " + id);
@@ -105,8 +106,10 @@ public class PipelineDesignerService {
         designRepo.deleteById(id);
     }
 
-    @Transactional(readOnly = true)
     public ValidationResult validate(String id) {
+        // No @Transactional: the validator probes connections/metadata which may throw
+        // and catch internally. A shared read-only txn would get marked rollback-only
+        // by those throws and fail on commit with UnexpectedRollbackException.
         return validator.validate(get(id));
     }
 
@@ -117,6 +120,7 @@ public class PipelineDesignerService {
                 .toList();
     }
 
+    @Transactional
     public PipelineDesign rollback(String id, int targetVersion) {
         var versionEntity = versionRepo.findByPipelineIdAndVersion(id, targetVersion)
                 .orElseThrow(() -> new NoSuchElementException(
@@ -137,8 +141,13 @@ public class PipelineDesignerService {
     @Transactional(readOnly = true)
     public PipelinePreview preview(String id) {
         var design = get(id);
-        var tm = design.tableMappings().stream().findFirst()
-                .orElseThrow(() -> new IllegalStateException("No table mappings to preview"));
+
+        // Return an empty preview when no table mappings have been defined yet
+        if (design.tableMappings().isEmpty()) {
+            return new PipelinePreview("", "", List.of(), List.of(), List.of(), List.of(), 0);
+        }
+
+        var tm = design.tableMappings().getFirst();
 
         var srcCols = new ArrayList<PreviewColumn>();
         var destCols = new ArrayList<PreviewColumn>();
