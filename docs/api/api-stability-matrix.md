@@ -24,9 +24,9 @@
 | `GET /api/connections/{id}/schemas/{s}/tables` | 🌐 Public | 0.1.0 | — | |
 | `GET /api/connections/{id}/metadata/refresh` | 🌐 Public | 0.1.0 | — | |
 | `GET /api/pipelines` | 🌐 Public | 0.1.0 | — | |
-| `POST /api/pipelines` | 🌐 Public | 0.1.0 | — | |
+| `POST /api/pipelines` | 🌐 Public | 0.1.0 | — | [create/update reference](pipeline-create-update.md) |
 | `GET /api/pipelines/{id}` | 🌐 Public | 0.1.0 | — | |
-| `PUT /api/pipelines/{id}` | 🌐 Public | 0.1.0 | — | |
+| `PUT /api/pipelines/{id}` | 🌐 Public | 0.1.0 | — | [create/update reference](pipeline-create-update.md) |
 | `DELETE /api/pipelines/{id}` | 🌐 Public | 0.1.0 | — | |
 | `POST /api/pipelines/{id}/validate` | 🌐 Public | 0.1.0 | — | |
 | `POST /api/pipelines/{id}/snapshot` | 🌐 Public | 0.1.0 | — | |
