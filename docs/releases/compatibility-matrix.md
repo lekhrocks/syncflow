@@ -116,7 +116,7 @@
 | Docker | 24 | Container build | `docker/Dockerfile` |
 | Helm | 3.12 | K8s packaging | `helm/syncflow/` |
 | k6 | 0.50 | Load testing | `k6/benchmark.js` |
-| Trivy | 0.50 | Vulnerability scan | `.github/workflows/ci-cd.yml` |
+| Trivy | 0.73.0 | Vulnerability scan | `.github/workflows/ci-cd.yml` |
 | Cosign | 2.2 | Container signing | CI `cosign-installer` |
 | LitmusChaos | 3.0 | Chaos experiments | `scripts/chaos/experiment.yaml` |
 

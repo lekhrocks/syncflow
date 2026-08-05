@@ -283,10 +283,7 @@ jobs:
       contents: read
       packages: write
       security-events: write
-    env:
-      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-      COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+      id-token: write  # for keyless cosign signing via GitHub OIDC
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -345,18 +342,20 @@ jobs:
       - name: Cosign image signature
         if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@v4.1.2
-      - name: Sign container image
+      - name: Sign container image (keyless)
         if: github.event_name != 'pull_request'
         run: |
           cosign sign --yes \
-            --key env://COSIGN_PRIVATE_KEY \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-image.outputs.digest }}
-      - name: Verify image signature
+            --oidc-issuer=https://token.actions.githubusercontent.com \
+            --oidc-client-id=sigstore \
+            ${{ steps.build-image.outputs.digest }}
+      - name: Verify image signature (keyless)
         if: github.event_name != 'pull_request'
         run: |
           cosign verify \
-            --key env://COSIGN_PUBLIC_KEY \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-image.outputs.digest }}
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yml@refs/.*" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            ${{ steps.build-image.outputs.digest }}
 
   helm-validate:
     name: Helm Validation
