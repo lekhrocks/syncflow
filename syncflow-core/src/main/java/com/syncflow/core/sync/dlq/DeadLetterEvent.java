@@ -10,5 +10,6 @@ public record DeadLetterEvent(
         CDCEvent originalEvent,
         FailureReason reason,
         int retryCount,
-        Instant timestamp) {
+        Instant timestamp,
+        int replayCount) {
 }
