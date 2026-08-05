@@ -19,19 +19,28 @@ import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 
 /**
- * Security-behavior tests that assert the REAL WebSecurityConfig (authenticated
- * /api/** endpoints) rejects unauthenticated requests. Unlike the functional
- * contract tests (which use a permissive test security via
- * AbstractIntegrationTest), these intentionally load the production chain.
+ * Security-behavior tests that assert the REAL WebSecurityConfig (JWT bearer
+ * auth,
+ * authenticated /api/** endpoints). Unlike the functional contract tests (which
+ * use
+ * a permissive test security via AbstractIntegrationTest), these load the
+ * production
+ * chain.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 @Tag("integration")
 @EnabledIfSystemProperty(named = "tests.integration", matches = "true")
 class ApiAuthContractTest {
+
+    // Matches the seeded admin user in V9__users.sql and the base64 secret default.
+    private static final String ADMIN_USER = "admin";
+    private static final String ADMIN_PASS = "admin-test-password";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -49,11 +58,22 @@ class ApiAuthContractTest {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+        registry.add("syncflow.jwt.secret",
+                () -> "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==");
+        registry.add("syncflow.jwt.issuer", () -> "syncflow");
     }
 
     @BeforeEach
     void setUp() {
         RestAssured.port = port;
+    }
+
+    private String loginToken() {
+        return given().contentType(ContentType.JSON)
+                .body(Map.of("username", ADMIN_USER, "password", ADMIN_PASS))
+                .when().post("/api/auth/login")
+                .then().statusCode(200).body("token", notNullValue())
+                .extract().path("token");
     }
 
     @Test
@@ -66,9 +86,38 @@ class ApiAuthContractTest {
     }
 
     @Test
-    @DisplayName("DELETE /api/connections without role -> 401/403")
-    void deleteWithoutPermission() {
-        given().when().delete("/api/connections/nonexistent")
-                .then().statusCode(anyOf(is(401), is(403), is(204), is(500)));
+    @DisplayName("POST /api/auth/login with seeded admin -> 200 + token")
+    void loginSuccess() {
+        given().contentType(ContentType.JSON)
+                .body(Map.of("username", ADMIN_USER, "password", ADMIN_PASS))
+                .when().post("/api/auth/login")
+                .then().statusCode(200)
+                .body("token", notNullValue())
+                .body("tokenType", equalTo("Bearer"));
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/login with wrong password -> 401")
+    void loginBadPassword() {
+        given().contentType(ContentType.JSON)
+                .body(Map.of("username", ADMIN_USER, "password", "wrong"))
+                .when().post("/api/auth/login")
+                .then().statusCode(401);
+    }
+
+    @Test
+    @DisplayName("GET /api/users with valid token -> 200")
+    void usersAuthed() {
+        var token = loginToken();
+        given().header("Authorization", "Bearer " + token)
+                .when().get("/api/users")
+                .then().statusCode(200)
+                .body("$", notNullValue());
+    }
+
+    @Test
+    @DisplayName("GET /api/users without token -> 401")
+    void usersUnauthenticated() {
+        given().when().get("/api/users").then().statusCode(401);
     }
 }
