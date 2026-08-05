@@ -14,21 +14,16 @@ import com.syncflow.core.pipeline.mapping.ColumnMapping;
 import com.syncflow.core.pipeline.mapping.PrimaryKeyMapping;
 import com.syncflow.core.pipeline.mapping.TableMapping;
 import com.syncflow.core.snapshot.SnapshotJob;
-import io.restassured.RestAssured;
+import com.syncflow.api.config.AbstractIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.Map;
@@ -36,20 +31,7 @@ import java.util.Map;
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class SnapshotIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("snapshottest")
-            .withUsername("testuser")
-            .withPassword("testpass");
-
-    @LocalServerPort
-    private int port;
+class SnapshotIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ConnectionService connectionService;
@@ -59,6 +41,12 @@ class SnapshotIntegrationTest {
 
     private String connectionId;
     private String pipelineId;
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+            .withDatabaseName("snapshottest")
+            .withUsername("testuser")
+            .withPassword("testpass");
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -71,8 +59,6 @@ class SnapshotIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        RestAssured.port = port;
-
         var props = new ConnectionProperties(ConnectionType.POSTGRESQL,
                 postgres.getHost(), postgres.getMappedPort(5432), "snapshottest", Map.of());
         var creds = new Credentials("testuser", "testpass");

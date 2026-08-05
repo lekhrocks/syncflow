@@ -106,12 +106,14 @@ public class AdminController {
         if (ctx == null) {
             return ResponseEntity.ok(Map.of("tenantId", TenantId.DEFAULT.value()));
         }
-        return ResponseEntity.ok(Map.of(
-                "tenantId", ctx.tenantId().value(),
-                "userId", ctx.userId(),
-                "roles", ctx.roles(),
-                "organizationId", ctx.organizationId() != null ? ctx.organizationId().value() : null,
-                "workspaceId", ctx.workspaceId() != null ? ctx.workspaceId().value() : null,
-                "projectId", ctx.projectId() != null ? ctx.projectId().value() : null));
+        // Use a mutable map so null values are allowed (Map.of() rejects nulls)
+        var result = new java.util.LinkedHashMap<String, Object>();
+        result.put("tenantId", ctx.tenantId().value());
+        result.put("userId", ctx.userId());
+        result.put("roles", ctx.roles());
+        result.put("organizationId", ctx.organizationId() != null ? ctx.organizationId().value() : null);
+        result.put("workspaceId", ctx.workspaceId() != null ? ctx.workspaceId().value() : null);
+        result.put("projectId", ctx.projectId() != null ? ctx.projectId().value() : null);
+        return ResponseEntity.ok(result);
     }
 }

@@ -92,6 +92,14 @@ public class WorkflowScheduler {
         return leader.get();
     }
 
+    /**
+     * Resets leader flag and clears all tracked workflows. Used in test teardown.
+     */
+    public void reset() {
+        leader.set(false);
+        workflows.clear();
+    }
+
     private void tick() {
         if (!leader.get())
             return;

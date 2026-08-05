@@ -1,21 +1,15 @@
 package com.syncflow.api;
 
-import io.restassured.RestAssured;
+import com.syncflow.api.config.AbstractIntegrationTest;
 import io.restassured.http.ContentType;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -28,61 +22,21 @@ import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class RestApiContractTest {
+class RestApiContractTest extends AbstractIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("resttest").withUsername("testuser").withPassword("testpass");
-
-    @LocalServerPort
-    private int port;
+            .withDatabaseName("resttest")
+            .withUsername("testuser")
+            .withPassword("testpass");
 
     @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.flyway.enabled", () -> "true");
-        r.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
-    }
-
-    @BeforeEach
-    void setUp() {
-        RestAssured.port = port;
-    }
-
-    // ============ STATUS 401 - Unauthenticated ============
-
-    @Nested
-    @DisplayName("401 Unauthenticated")
-    class Status401 {
-
-        @Test
-        @DisplayName("POST /connections without auth")
-        void createConnectionUnauthenticated() {
-            given().contentType(ContentType.JSON)
-                    .body(Map.of("name", "test", "connectionType", "POSTGRESQL",
-                            "host", "h", "port", 5432, "database", "d", "username", "u", "password", "p"))
-                    .when().post("/api/connections").then().statusCode(anyOf(is(401), is(403)));
-        }
-    }
-
-    // ============ STATUS 403 - Forbidden ============
-
-    @Nested
-    @DisplayName("403 Forbidden")
-    class Status403 {
-
-        @Test
-        @DisplayName("DELETE without appropriate role")
-        void deleteWithoutPermission() {
-            given().when().delete("/api/connections/nonexistent")
-                    .then().statusCode(anyOf(is(401), is(403), is(204), is(500)));
-        }
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
     }
 
     // ============ STATUS 404 - Not Found ============

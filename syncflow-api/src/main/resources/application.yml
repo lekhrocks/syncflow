@@ -42,7 +42,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info,metrics,prometheus,shutdown
   endpoint:
     health:
       show-details: always
@@ -52,11 +52,14 @@ management:
       enabled: true
     prometheus:
       enabled: true
+    shutdown:
+      enabled: false   # endpoint is listed so Spring maps it (→ 404/405), but never executes
   metrics:
     tags:
       application: ${spring.application.name}
-    export:
-      prometheus:
+  prometheus:
+    metrics:
+      export:
         enabled: true
   otlp:
     tracing:
@@ -88,3 +91,26 @@ syncflow:
     api-key: ${SYNCFLOW_AI_API_KEY:}
     max-tokens: 4096
     temperature: 0.3
+  kafka:
+    enabled: ${SYNCFLOW_KAFKA_ENABLED:false}
+    bootstrap-servers: ${SYNCFLOW_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    topic:
+      prefix: ${SYNCFLOW_KAFKA_TOPIC_PREFIX:syncflow}
+      partitions: ${SYNCFLOW_KAFKA_TOPIC_PARTITIONS:3}
+      replication-factor: ${SYNCFLOW_KAFKA_TOPIC_REPLICATION_FACTOR:1}
+      retention-ms: ${SYNCFLOW_KAFKA_TOPIC_RETENTION_MS:604800000}  # 7 days
+    producer:
+      acks: all
+      retries: 3
+      batch-size: 65536
+      linger-ms: 5
+      compression-type: snappy
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: ${SYNCFLOW_KAFKA_CONSUMER_GROUP:syncflow-consumer}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: 500
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer

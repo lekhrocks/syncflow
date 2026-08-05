@@ -1,24 +1,18 @@
 package com.syncflow.api.ops;
 
+import com.syncflow.api.config.AbstractIntegrationTest;
 import com.syncflow.api.ops.alert.AlertEngine;
 import com.syncflow.api.ops.alert.AlertSeverity;
 import com.syncflow.api.ops.health.DetailedHealthController;
 import com.syncflow.api.ops.health.HealthAggregator;
-import io.restassured.RestAssured;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.anyOf;
@@ -31,18 +25,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class ObservabilityIntegrationTest {
+class ObservabilityIntegrationTest extends AbstractIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("obstest").withUsername("testuser").withPassword("testpass");
+            .withDatabaseName("obstest")
+            .withUsername("testuser")
+            .withPassword("testpass");
 
-    @LocalServerPort
-    private int port;
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+    }
 
     @Autowired
     private HealthAggregator healthAggregator;
@@ -50,20 +48,6 @@ class ObservabilityIntegrationTest {
     private DetailedHealthController healthController;
     @Autowired
     private AlertEngine alertEngine;
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.flyway.enabled", () -> "true");
-        r.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
-    }
-
-    @BeforeEach
-    void setUp() {
-        RestAssured.port = port;
-    }
 
     // ============ Health endpoint ============
 

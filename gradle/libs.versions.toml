@@ -11,7 +11,7 @@ mapstruct-processor = "1.6.3"
 jackson = "2.18.3"
 micrometer = "1.15.5"
 opentelemetry = "2.15.0"
-testcontainers = "1.20.6"
+testcontainers = "1.21.2"
 kafka = "3.9.0"
 mongodb-driver = "5.4.0"
 debezium = "3.1.0.Final"
@@ -52,6 +52,7 @@ h2 = { module = "com.h2database:h2", version = "2.3.232" }
 
 testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
+testcontainers-kafka = { module = "org.testcontainers:kafka", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
 
 kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }

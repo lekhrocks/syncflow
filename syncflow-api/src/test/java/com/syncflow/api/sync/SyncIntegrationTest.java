@@ -5,44 +5,27 @@ import com.syncflow.core.connection.ConnectionProperties;
 import com.syncflow.core.connection.ConnectionType;
 import com.syncflow.core.connection.Credentials;
 import com.syncflow.core.sync.FailureReason;
-import io.restassured.RestAssured;
+import com.syncflow.api.config.AbstractIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class SyncIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("synctest")
-            .withUsername("testuser")
-            .withPassword("testpass");
-
-    @LocalServerPort
-    private int port;
+class SyncIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ConnectionService connectionService;
@@ -51,6 +34,12 @@ class SyncIntegrationTest {
     private DeadLetterQueue dlq;
 
     private String pgConnectionId;
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+            .withDatabaseName("synctest")
+            .withUsername("testuser")
+            .withPassword("testpass");
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -63,7 +52,6 @@ class SyncIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        RestAssured.port = port;
         var props = new ConnectionProperties(ConnectionType.POSTGRESQL,
                 postgres.getHost(), postgres.getMappedPort(5432), "synctest", Map.of());
         var creds = new Credentials("testuser", "testpass");
@@ -74,6 +62,9 @@ class SyncIntegrationTest {
     void tearDown() {
         if (pgConnectionId != null)
             connectionService.delete(pgConnectionId);
+        // JPA-backed DLQ persists across tests; clear so count/list assertions
+        // in DLQ tests see only the events each test adds.
+        dlq.clearAll();
     }
 
     @Nested
@@ -138,13 +129,19 @@ class SyncIntegrationTest {
         }
 
         @Test
-        @DisplayName("DLQ replay removes from store")
-        void replayRemoves() {
+        @DisplayName("DLQ replay keeps the record and bumps replay count")
+        void replayRetains() {
             dlq.add("p-1", null, FailureReason.permanentError("replay"), 2);
             var events = dlq.list("p-1");
             var id = events.getFirst().id();
             dlq.replay(id);
-            assertNull(dlq.get(id));
+            // Replay marks the event and increments replayCount; it does not delete it,
+            // so the audit trail (replayedAt, replayCount) is preserved.
+            var after = dlq.get(id);
+            assertNotNull(after);
+            assertEquals(1, after.replayCount());
+            dlq.replay(id);
+            assertEquals(2, dlq.get(id).replayCount());
         }
     }
 
@@ -153,13 +150,14 @@ class SyncIntegrationTest {
     class SyncStatus {
 
         @Test
-        @DisplayName("GET /pipelines/{id}/sync/status returns state")
+        @DisplayName("GET /pipelines/{id}/sync/status returns stopped for unknown pipeline")
         void syncStatus() {
-            // No sync running — returns stopped
+            // No sync running for unknown pipeline — orchestrator returns STOPPED (200)
             given()
                     .when().get("/api/pipelines/nonexistent/sync/status")
                     .then()
-                    .statusCode(500);
+                    .statusCode(200)
+                    .body("state", equalTo("STOPPED"));
         }
     }
 }

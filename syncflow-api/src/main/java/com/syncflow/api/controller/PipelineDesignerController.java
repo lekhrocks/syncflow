@@ -81,7 +81,16 @@ public class PipelineDesignerController {
                 ? new DestinationReference(req.destConnectionId(), req.destSchema(), req.destTable(), null)
                 : existing.destination();
         var mappings = req.tableMappings() != null ? req.tableMappings() : existing.tableMappings();
-        var settings = existing.settings();
+
+        // Partial update of settings: apply only what the request sends.
+        var cur = existing.settings();
+        var syncMode = req.syncMode() != null ? req.syncMode() : cur.syncMode();
+        var batchSize = req.batchSize() != null ? req.batchSize() : cur.batchSize();
+        var settings = req.settings() != null
+                ? new PipelineSettings(syncMode, batchSize, cur.maxRetries(),
+                        cur.skipConstraints(), cur.skipIndexes(), req.settings())
+                : new PipelineSettings(syncMode, batchSize, cur.maxRetries(),
+                        cur.skipConstraints(), cur.skipIndexes(), cur.properties());
 
         var pipeline = service.update(id, name, source, dest, mappings, settings);
         return ResponseEntity.ok(PipelineDesignResponse.from(pipeline));

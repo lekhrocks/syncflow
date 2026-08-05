@@ -7,9 +7,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
 
@@ -34,6 +36,25 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse("VALIDATION_ERROR", "Validation failed",
                         CorrelationId.get(), 400, Instant.now(), fieldErrors));
+    }
+
+    /** Malformed / unparseable JSON body → 400 */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("INVALID_REQUEST_BODY", "Request body could not be read: " + ex.getMessage(),
+                        CorrelationId.get(), 400, Instant.now(), null));
+    }
+
+    /**
+     * Unknown URL path → 404 (Spring 6 raises NoResourceFoundException, not
+     * NoHandlerFoundException)
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("NOT_FOUND", ex.getMessage(),
+                        CorrelationId.get(), 404, Instant.now(), null));
     }
 
     @ExceptionHandler(Exception.class)

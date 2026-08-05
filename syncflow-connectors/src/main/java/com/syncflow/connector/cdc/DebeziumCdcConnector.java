@@ -24,8 +24,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -184,9 +182,10 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
         debeziumProps.setProperty("topic.prefix", "syncflow");
 
-        // use initial_only for first run (no offset file), never otherwise
-        var offsetFileExists = Files.exists(Path.of(offsetFile));
-        debeziumProps.setProperty("snapshot.mode", offsetFileExists ? "never" : "initial_only");
+        // no_data: stream only, skip snapshot. initial_only stops the connector after
+        // the snapshot; never requires a valid prior offset. no_data always streams
+        // live changes regardless of offset state.
+        debeziumProps.setProperty("snapshot.mode", "no_data");
 
         debeziumProps.setProperty("database.hostname", config.host());
         debeziumProps.setProperty("database.port", String.valueOf(config.port()));

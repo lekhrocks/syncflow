@@ -133,5 +133,10 @@ subprojects {
     tasks.withType(Test).configureEach {
         useJUnitPlatform()
         jvmArgs("--enable-preview")
+        // forward the CI/local flag so @EnabledIfSystemProperty integration tests actually run
+        systemProperty("tests.integration", System.getProperty("tests.integration", "false"))
+        // Docker Desktop 4.84+ rejects docker-java's default API negotiation (min 1.40);
+        // pin the API version so Testcontainers can talk to the local daemon.
+        systemProperty("api.version", System.getenv().getOrDefault("DOCKER_API_VERSION", "1.40"))
     }
 }

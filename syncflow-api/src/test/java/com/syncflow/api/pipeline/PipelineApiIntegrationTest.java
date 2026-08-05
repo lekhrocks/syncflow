@@ -1,20 +1,14 @@
 package com.syncflow.api.pipeline;
 
-import io.restassured.RestAssured;
+import com.syncflow.api.config.AbstractIntegrationTest;
 import io.restassured.http.ContentType;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Order;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
 
@@ -23,21 +17,13 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.isA;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@Tag("integration")
-@EnabledIfSystemProperty(named = "tests.integration", matches = "true")
-class PipelineApiIntegrationTest {
+class PipelineApiIntegrationTest extends AbstractIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("pipelinestest")
             .withUsername("testuser")
             .withPassword("testpass");
-
-    @LocalServerPort
-    private int port;
-    private String createdPipelineId;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -48,10 +34,7 @@ class PipelineApiIntegrationTest {
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
     }
 
-    @BeforeEach
-    void setUp() {
-        RestAssured.port = port;
-    }
+    private String createdPipelineId;
 
     @Test
     @Order(1)
@@ -135,6 +118,29 @@ class PipelineApiIntegrationTest {
 
     @Test
     @Order(5)
+    @DisplayName("PUT /pipelines/{id} applies syncMode and batchSize")
+    void updatePipelineSettings() {
+        var id = given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("name", "settings-test",
+                        "sourceConnectionId", "c1", "sourceSchema", "s",
+                        "sourceTable", "t", "destConnectionId", "c2",
+                        "destSchema", "s", "destTable", "t"))
+                .post("/api/pipelines")
+                .path("id");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("syncMode", "CDC_INCREMENTAL", "batchSize", 250))
+                .when().put("/api/pipelines/{id}", id)
+                .then()
+                .statusCode(200)
+                .body("settings.syncMode", equalTo("CDC_INCREMENTAL"))
+                .body("settings.batchSize", equalTo(250));
+    }
+
+    @Test
+    @Order(5)
     @DisplayName("DELETE /pipelines/{id} -> 204 deletes pipeline")
     void deletePipeline() {
         var id = given()
@@ -150,6 +156,27 @@ class PipelineApiIntegrationTest {
                 .when().delete("/api/pipelines/{id}", id)
                 .then()
                 .statusCode(204);
+    }
+
+    @Test
+    @Order(5)
+    @DisplayName("PUT /pipelines/{id} rejects invalid syncMode with 400")
+    void updatePipelineInvalidSyncMode() {
+        var id = given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("name", "bad-mode-test",
+                        "sourceConnectionId", "c1", "sourceSchema", "s",
+                        "sourceTable", "t", "destConnectionId", "c2",
+                        "destSchema", "s", "destTable", "t"))
+                .post("/api/pipelines")
+                .path("id");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("syncMode", "NOT_A_MODE"))
+                .when().put("/api/pipelines/{id}", id)
+                .then()
+                .statusCode(400);
     }
 
     @Test
