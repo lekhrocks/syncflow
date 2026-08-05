@@ -345,14 +345,15 @@ jobs:
       - name: Sign container image (keyless)
         if: github.event_name != 'pull_request'
         run: |
-          cosign sign --yes ${{ steps.build-image.outputs.digest }}
+          cosign sign --yes \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-image.outputs.digest }}
       - name: Verify image signature (keyless)
         if: github.event_name != 'pull_request'
         run: |
           cosign verify \
             --certificate-identity-regexp="https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yml@refs/.*" \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-            ${{ steps.build-image.outputs.digest }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-image.outputs.digest }}
 
   helm-validate:
     name: Helm Validation
