@@ -45,5 +45,9 @@
   },
   "engines": {
     "node": ">=20.0"
+  },
+  "overrides": {
+    "copy-webpack-plugin": "14.0.0",
+    "css-minimizer-webpack-plugin": "8.0.0"
   }
 }
