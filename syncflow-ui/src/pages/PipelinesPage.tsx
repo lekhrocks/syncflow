@@ -5,7 +5,7 @@ import axios from 'axios';
 import { notifications } from '@mantine/notifications';
 import { useForm } from '@mantine/form';
 import { IconPlus, IconEdit, IconTrash, IconPlayerPlay } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useState } from 'react';
 
 const api = axios.create({ baseURL: '/api' });
