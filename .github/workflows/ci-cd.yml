@@ -345,10 +345,7 @@ jobs:
       - name: Sign container image (keyless)
         if: github.event_name != 'pull_request'
         run: |
-          cosign sign --yes \
-            --oidc-issuer=https://token.actions.githubusercontent.com \
-            --oidc-client-id=sigstore \
-            ${{ steps.build-image.outputs.digest }}
+          cosign sign --yes ${{ steps.build-image.outputs.digest }}
       - name: Verify image signature (keyless)
         if: github.event_name != 'pull_request'
         run: |
