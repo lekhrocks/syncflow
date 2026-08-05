@@ -12,7 +12,7 @@ dependencies {
     implementation libs.debezium.connector.postgres
     implementation libs.debezium.connector.mysql
 
-    compileOnly libs.kafka.clients
+    implementation libs.kafka.clients
 
     annotationProcessor libs.lombok
 
