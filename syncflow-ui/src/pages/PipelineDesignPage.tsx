@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { Paper, Title, Text, Group, Button, Badge, SimpleGrid, Tabs, Stack, Code } from '@mantine/core';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import axios from 'axios';

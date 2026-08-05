@@ -1,6 +1,6 @@
 import { AppShell, Group, Text, ThemeIcon, UnstyledButton, Flex } from '@mantine/core';
 import { IconDashboard, IconPlugConnected, IconSchema, IconPipeline, IconPlayerPlay, IconChartLine, IconShieldCheck, IconReportAnalytics, IconSettings, IconPackage, IconHierarchy, IconCloud } from '@tabler/icons-react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router';
 import { AiFloatingButton } from '../ai/AiFloatingButton';
 
 const navItems = [

@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { Tree, Paper, Title, Text, Group, Button, Tabs, Table, Badge, SimpleGrid } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { metadataApi } from '../services/api';

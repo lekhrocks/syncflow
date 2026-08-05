@@ -5,7 +5,7 @@ import { connectionApi } from '../services/api';
 import { notifications } from '@mantine/notifications';
 import { useForm } from '@mantine/form';
 import { IconPlus, IconEdit, IconTrash, IconPlugConnected } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useState } from 'react';
 import type { CreateConnectionRequest, ConnectionResponse } from '../types/api';
 
