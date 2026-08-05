@@ -350,13 +350,13 @@ jobs:
         run: |
           cosign sign --yes \
             --key env://COSIGN_PRIVATE_KEY \
-            ${{ steps.build-image.outputs.digest }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-image.outputs.digest }}
       - name: Verify image signature
         if: github.event_name != 'pull_request'
         run: |
           cosign verify \
             --key env://COSIGN_PUBLIC_KEY \
-            ${{ steps.build-image.outputs.digest }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-image.outputs.digest }}
 
   helm-validate:
     name: Helm Validation

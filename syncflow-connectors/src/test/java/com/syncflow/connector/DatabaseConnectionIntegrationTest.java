@@ -159,11 +159,16 @@ class DatabaseConnectionIntegrationTest {
 
     @Test
     void redisInvalidPort() {
-        var props = new ConnectionProperties(ConnectionType.REDIS, redis.getHost(),
-                99999, "0", Map.of());
-        var creds = new Credentials("", "");
-        var result = redisValidator.validate(props, creds);
-        assertFalse(result.valid());
+        try {
+            var props = new ConnectionProperties(ConnectionType.REDIS, redis.getHost(),
+                    99999, "0", Map.of());
+            var creds = new Credentials("", "");
+            var result = redisValidator.validate(props, creds);
+            assertFalse(result.valid());
+        } catch (IllegalArgumentException e) {
+            // ConnectionProperties constructor rejects out-of-range ports — this is also a valid failure
+            assertTrue(e.getMessage().contains("port"));
+        }
     }
 
     // --- Connection pool exhaustion test ---
