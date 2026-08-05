@@ -166,7 +166,8 @@ class DatabaseConnectionIntegrationTest {
             var result = redisValidator.validate(props, creds);
             assertFalse(result.valid());
         } catch (IllegalArgumentException e) {
-            // ConnectionProperties constructor rejects out-of-range ports — this is also a valid failure
+            // ConnectionProperties constructor rejects out-of-range ports — this is also a
+            // valid failure
             assertTrue(e.getMessage().contains("port"));
         }
     }

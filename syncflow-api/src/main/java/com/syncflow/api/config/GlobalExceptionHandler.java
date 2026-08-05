@@ -46,7 +46,10 @@ public class GlobalExceptionHandler {
                         CorrelationId.get(), 400, Instant.now(), null));
     }
 
-    /** Unknown URL path → 404 (Spring 6 raises NoResourceFoundException, not NoHandlerFoundException) */
+    /**
+     * Unknown URL path → 404 (Spring 6 raises NoResourceFoundException, not
+     * NoHandlerFoundException)
+     */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

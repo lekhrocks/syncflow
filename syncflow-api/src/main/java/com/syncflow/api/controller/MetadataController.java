@@ -36,7 +36,9 @@ public class MetadataController {
         return ResponseEntity.ok(discoveryService.discoverSchemas(id));
     }
 
-    /** GET /api/connections/{id}/schemas/{schema}/tables (direct path used by tests) */
+    /**
+     * GET /api/connections/{id}/schemas/{schema}/tables (direct path used by tests)
+     */
     @GetMapping("/schemas/{schema}/tables")
     public ResponseEntity<MetadataResponse<TableMetadata>> getTables(
             @PathVariable String id, @PathVariable String schema) {
@@ -77,7 +79,8 @@ public class MetadataController {
         return ResponseEntity.ok(discoveryService.discoverIndexes(id, schema, table));
     }
 
-    @GetMapping({"/schemas/{schema}/tables/{table}/constraints", "/metadata/schemas/{schema}/tables/{table}/constraints"})
+    @GetMapping({"/schemas/{schema}/tables/{table}/constraints",
+            "/metadata/schemas/{schema}/tables/{table}/constraints"})
     public ResponseEntity<MetadataResponse<ConstraintMetadata>> getConstraints(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {

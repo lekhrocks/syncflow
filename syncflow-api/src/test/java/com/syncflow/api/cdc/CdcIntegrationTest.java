@@ -71,7 +71,8 @@ class CdcIntegrationTest extends AbstractIntegrationTest {
             // replication slot + publication (fixed names per database) and delete
             // the offset file so Debezium streams from the current WAL position
             // instead of resuming from a stale LSN ("WAL resume position null").
-            stmt.execute("SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'syncflow_slot_cdctest'");
+            stmt.execute(
+                    "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'syncflow_slot_cdctest'");
             stmt.execute("DROP PUBLICATION IF EXISTS syncflow_pub_cdctest");
             var offsetFile = System.getProperty("java.io.tmpdir")
                     + "/syncflow_offset_postgresql_localhost_cdctest.dat";

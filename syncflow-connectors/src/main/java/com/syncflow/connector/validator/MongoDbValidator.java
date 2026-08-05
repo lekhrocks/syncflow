@@ -19,7 +19,8 @@ public class MongoDbValidator implements ConnectionValidator {
 
     @Override
     public DetailedValidationResult validate(ConnectionProperties props, Credentials credentials) {
-        // Build a MongoDB URI. When username is blank (no-auth container), omit credentials.
+        // Build a MongoDB URI. When username is blank (no-auth container), omit
+        // credentials.
         var hasAuth = credentials != null && !credentials.username().isBlank();
         String uri;
         if (hasAuth) {
