@@ -85,6 +85,11 @@ syncflow:
   encryption:
     # 16-byte AES key, base64-encoded. Replace in production with a secure key.
     key: MDEyMzQ1Njc4OWFiY2RlZg==
+  jwt:
+    # Base64-encoded HMAC secret (HS256). Replace in production with a 32+ byte key.
+    secret: ${SYNCFLOW_JWT_SECRET:c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==}
+    issuer: ${SYNCFLOW_JWT_ISSUER:syncflow}
+    expiry-minutes: ${SYNCFLOW_JWT_EXPIRY_MINUTES:60}
   ai:
     endpoint: ${SYNCFLOW_AI_ENDPOINT:https://api.openai.com/v1/chat/completions}
     model: ${SYNCFLOW_AI_MODEL:gpt-4o}

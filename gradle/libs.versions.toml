@@ -34,6 +34,8 @@ spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-star
 spring-modulith-starter-core = { module = "org.springframework.modulith:spring-modulith-starter-core" }
 spring-modulith-starter-test = { module = "org.springframework.modulith:spring-modulith-test" }
 spring-security-test = { module = "org.springframework.security:spring-security-test" }
+spring-security-oauth2-jose = { module = "org.springframework.security:spring-security-oauth2-jose", version.ref = "spring-security" }
+spring-security-oauth2-resource-server = { module = "org.springframework.security:spring-security-oauth2-resource-server", version.ref = "spring-security" }
 spring-doc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
 
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }

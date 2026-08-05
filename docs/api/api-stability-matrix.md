@@ -41,6 +41,9 @@
 | `POST /api/agents/register` | 🤝 Partner | 0.1.0 | — | |
 | `POST /api/ai/chat` | 🌐 Public | 0.1.0 | — | |
 | `POST /api/ai/pipeline` | 🌐 Public | 0.1.0 | — | |
+| `POST /api/auth/login` | 🌐 Public | 0.1.0 | — | [auth reference](auth.md) |
+| `GET /api/auth/me` | 🌐 Public | 0.1.0 | — | [auth reference](auth.md) |
+| `GET /api/users` | 🌐 Public | 0.1.0 | — | [auth reference](auth.md) |
 | `GET /api/dashboard/overview` | 🔒 Internal | 0.1.0 | — | Dashboard is platform UI |
 | `GET /api/diagnostics/system` | 🔒 Internal | 0.1.0 | — | |
 | `GET /api/plugins` | 🤝 Partner | 0.1.0 | — | Plugin marketplace |

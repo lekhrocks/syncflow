@@ -48,7 +48,7 @@ public class AdminController {
 
     @PostMapping("/organizations")
     public ResponseEntity<Map<String, String>> createOrg(@RequestBody Map<String, String> body) {
-        authz.require(ResourcePermission.AI_USE);
+        authz.require(ResourcePermission.ORG_WRITE);
         var id = OrganizationId.generate();
         return ResponseEntity.ok(Map.of("id", id.value(), "name", body.getOrDefault("name", "Org")));
     }
@@ -84,12 +84,14 @@ public class AdminController {
 
     @DeleteMapping("/apikeys/{id}")
     public ResponseEntity<Map<String, Object>> revokeApiKey(@PathVariable UUID id) {
+        authz.require(ResourcePermission.APIKEY_REVOKE);
         var ok = apiKeyStore.revoke(id);
         return ResponseEntity.ok(Map.of("revoked", ok));
     }
 
     @GetMapping("/quotas")
     public ResponseEntity<Quota> getQuota() {
+        authz.require(ResourcePermission.ORG_READ);
         return ResponseEntity.ok(quotaEngine.getQuota(TenantContextHolder.getTenantId()));
     }
 
@@ -102,6 +104,8 @@ public class AdminController {
 
     @GetMapping("/tenants")
     public ResponseEntity<Map<String, Object>> me() {
+        // Self-informational: returns the caller's own tenant context; no permission
+        // gate beyond being authenticated (the resource server enforces that).
         var ctx = TenantContextHolder.get();
         if (ctx == null) {
             return ResponseEntity.ok(Map.of("tenantId", TenantId.DEFAULT.value()));

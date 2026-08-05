@@ -17,6 +17,8 @@ dependencies {
 
     implementation libs.spring.boot.starter.actuator
     implementation libs.spring.boot.starter.security
+    implementation libs.spring.security.oauth2.jose
+    implementation libs.spring.security.oauth2.resource.server
     implementation libs.spring.doc.openapi.starter.webmvc.ui
     implementation libs.kafka.clients
     implementation libs.flyway.core
