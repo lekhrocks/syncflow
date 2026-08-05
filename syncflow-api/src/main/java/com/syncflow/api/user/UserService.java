@@ -40,8 +40,20 @@ public class UserService {
         u.setEmail(email);
         u.setRoles(roles == null || roles.isBlank() ? RoleConstants.USER : roles);
         u.setEnabled(true);
+        // Admin-provisioned accounts must set their own password on first login.
+        u.setMustChangePassword(true);
         u.setCreatedAt(now);
         u.setUpdatedAt(now);
+        return repository.save(u);
+    }
+
+    /** Set a new password and clear the must-change flag (first-login flow). */
+    public UserEntity changePassword(String username, String newPassword) {
+        var u = repository.findByUsername(username)
+                .orElseThrow(() -> new NoSuchElementException("User not found: " + username));
+        u.setPasswordHash(passwordEncoder.encode(newPassword));
+        u.setMustChangePassword(false);
+        u.setUpdatedAt(Instant.now());
         return repository.save(u);
     }
 
@@ -83,7 +95,8 @@ public class UserService {
                 "username", u.getUsername(),
                 "email", u.getEmail() != null ? u.getEmail() : "",
                 "roles", u.getRoles(),
-                "enabled", u.isEnabled());
+                "enabled", u.isEnabled(),
+                "mustChangePassword", u.isMustChangePassword());
     }
 
     /** Thrown when creating a user whose username already exists. */

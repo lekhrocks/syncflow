@@ -26,7 +26,7 @@ public class AuthorizationService {
     }
 
     public boolean isPermitted(ResourcePermission permission, TenantContext ctx) {
-        var policies = policyResolver.resolve(ctx.tenantId(), ctx.userId());
+        var policies = policyResolver.resolve(ctx.tenantId(), ctx.userId(), ctx.roles());
         return policies.contains(permission);
     }
 
