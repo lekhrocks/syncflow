@@ -43,6 +43,16 @@ class RbacUnitTest {
     }
 
     @Test
+    void adminRoleGrantsAllPermissions() {
+        // A non-admin username with the ADMIN role gets full permissions.
+        var ctx = new TenantContext(TenantId.DEFAULT, null, null, null, "alice",
+                Set.of(PolicyResolver.ADMIN_ROLE), java.time.Instant.now());
+        assertTrue(authz.isPermitted(ResourcePermission.AUDIT_READ, ctx));
+        assertTrue(authz.isPermitted(ResourcePermission.AI_USE, ctx));
+        assertTrue(authz.isPermitted(ResourcePermission.ORG_WRITE, ctx));
+    }
+
+    @Test
     void tenantContextHolderRoundTrip() {
         var ctx = new TenantContext(TenantId.DEFAULT, null, null, null, "user", Set.of(), java.time.Instant.now());
         TenantContextHolder.set(ctx);

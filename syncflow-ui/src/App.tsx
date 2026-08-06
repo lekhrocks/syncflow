@@ -1,5 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router';
+import { Center, Loader } from '@mantine/core';
+import type { ReactNode } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
+import { LoginPage } from './pages/LoginPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
+import { useAuth } from './auth/AuthContext';
 import { DashboardPage } from './pages/DashboardPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { ConnectionDetailPage } from './pages/ConnectionDetailPage';
@@ -9,6 +14,7 @@ import { PipelineDesignPage } from './pages/PipelineDesignPage';
 import { ExecutionPage } from './pages/ExecutionPage';
 import { MonitoringPage } from './pages/MonitoringPage';
 import { AuditPage } from './pages/AuditPage';
+import { UsersPage } from './pages/UsersPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { AdminPage } from './pages/admin/AdminPage';
 import { AgentFleetPage } from './pages/admin/AgentFleetPage';
@@ -16,7 +22,31 @@ import { MarketplacePage } from './pages/marketplace/MarketplacePage';
 import { WorkflowPage } from './pages/workflow/WorkflowPage';
 import { AnimatePresence } from 'framer-motion';
 
+/** Wraps admin-only routes; non-admins are redirected to the dashboard. */
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { isAdmin } = useAuth();
+  return isAdmin ? children : <Navigate to="/dashboard" replace />;
+}
+
 export default function App() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <Center h="100vh">
+        <Loader />
+      </Center>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  if (user.mustChangePassword) {
+    return <ChangePasswordPage />;
+  }
+
   return (
     <AnimatePresence mode="wait">
       <Routes>
@@ -31,9 +61,10 @@ export default function App() {
           <Route path="/execution" element={<ExecutionPage />} />
           <Route path="/monitoring" element={<MonitoringPage />} />
           <Route path="/audit" element={<AuditPage />} />
+          <Route path="/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
           <Route path="/diagnostics" element={<DiagnosticsPage />} />
-          <Route path="/agents" element={<AgentFleetPage />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/agents" element={<AdminRoute><AgentFleetPage /></AdminRoute>} />
+          <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/workflows" element={<WorkflowPage />} />
         </Route>

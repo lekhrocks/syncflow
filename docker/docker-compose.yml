@@ -1,4 +1,15 @@
+# SyncFlow local stack.
+#
+# Required: postgres + app (the control plane needs its DB).
+# The connector databases (mysql, mongodb, redis) and kafka are OPTIONAL —
+# enable them when you exercise those connectors. Kafka is off by default in
+# the app (syncflow.kafka.enabled); flip the app env below to use it.
+#
+# Run:      docker compose up -d
+# App:      http://localhost:8080   (JWT login; default admin/admin-test-password)
+
 services:
+  # ─── Required ─────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: syncflow-postgres
@@ -14,10 +25,10 @@ services:
       test: ["CMD-SHELL", "pg_isready -U syncflow"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   app:
-    image: eclipse-temurin:25-jdk-alpine
+    image: eclipse-temurin:25-jre-alpine
     container_name: syncflow-app
     depends_on:
       postgres:
@@ -28,11 +39,97 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/syncflow
       SPRING_DATASOURCE_USERNAME: syncflow
       SPRING_DATASOURCE_PASSWORD: syncflow
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      # JWT auth (must-change-password is on for admin-provisioned accounts).
+      SYNCFLOW_JWT_SECRET: ${SYNCFLOW_JWT_SECRET:-c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==}
+      # Kafka transport (off by default).
+      SYNCFLOW_KAFKA_ENABLED: ${SYNCFLOW_KAFKA_ENABLED:-false}
+      SYNCFLOW_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     volumes:
       - ../syncflow-api/build/libs/syncflow-api.jar:/app/app.jar
     working_dir: /app
     entrypoint: ["java", "--enable-preview", "-jar", "app.jar"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─── Optional: connector source databases ─────────────────────────────────
+  mysql:
+    image: mysql:8.4
+    container_name: syncflow-mysql
+    profiles: ["connectors"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: inventory
+      MYSQL_USER: syncflow
+      MYSQL_PASSWORD: syncflow
+    ports:
+      - "3306:3306"
+    command: --binlog-format=ROW --server-id=1  # required for Debezium CDC
+    volumes:
+      - mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongodb:
+    image: mongo:7.0
+    container_name: syncflow-mongodb
+    profiles: ["connectors"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: syncflow-redis
+    profiles: ["connectors"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Optional: Kafka transport ────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: syncflow-zookeeper
+    profiles: ["kafka"]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: syncflow-kafka
+    profiles: ["kafka"]
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
 volumes:
   pgdata:
+  mysqldata:
+  mongodata:

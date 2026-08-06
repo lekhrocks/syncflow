@@ -150,3 +150,33 @@ export interface SystemDiagnostics {
   os: { name: string; version: string; arch: string };
   java: { version: string; vendor: string; vm: string };
 }
+
+// --- Auth & Users ---
+export interface UserResponse {
+  id: string;
+  username: string;
+  email: string;
+  roles: string;
+  enabled: boolean;
+  mustChangePassword: boolean;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+  email?: string;
+  roles?: string;
+}
+
+export interface UpdateUserRequest {
+  email?: string;
+  roles?: string;
+  enabled?: boolean;
+}
+
+export interface LoginResponse {
+  token: string;
+  tokenType: string;
+  mustChangePassword: boolean;
+}
+

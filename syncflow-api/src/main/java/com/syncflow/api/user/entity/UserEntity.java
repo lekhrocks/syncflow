@@ -35,6 +35,10 @@ public class UserEntity {
     @Column(nullable = false)
     private boolean enabled;
 
+    /** Admin-provisioned accounts must set their own password on first login. */
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

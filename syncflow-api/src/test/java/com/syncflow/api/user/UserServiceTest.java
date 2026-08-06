@@ -42,6 +42,7 @@ class UserServiceTest {
         assertNotEquals("pw", encoder.encode("pw"));
         assertEquals(RoleConstants.USER, u.getRoles(), "blank roles should default to USER");
         assertTrue(u.isEnabled());
+        assertTrue(u.isMustChangePassword(), "admin-provisioned account must change password on first login");
     }
 
     @Test
