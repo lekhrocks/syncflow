@@ -18,6 +18,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 
+import java.io.File;
+import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -54,7 +56,7 @@ class CdcIntegrationTest extends AbstractIntegrationTest {
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
     }
 
-    private java.sql.Connection sqlConnection;
+    private Connection sqlConnection;
     private final PostgresCdcConnector cdcConnector = new PostgresCdcConnector();
     private final List<CDCEvent> capturedEvents = new CopyOnWriteArrayList<>();
     private volatile boolean capturing = false;
@@ -74,9 +76,12 @@ class CdcIntegrationTest extends AbstractIntegrationTest {
             stmt.execute(
                     "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'syncflow_slot_cdctest'");
             stmt.execute("DROP PUBLICATION IF EXISTS syncflow_pub_cdctest");
-            var offsetFile = System.getProperty("java.io.tmpdir")
-                    + "/syncflow_offset_postgresql_localhost_cdctest.dat";
-            new java.io.File(offsetFile).delete();
+            // Offset files are now keyed per-pipeline (suffix "_default" when the
+            // connector context carries no pipelineId); delete both the old and new
+            // names so stale state can't reset a partial DELETE/UPDATE.
+            var offsetDir = System.getProperty("java.io.tmpdir");
+            new File(offsetDir + "/syncflow_offset_postgresql_localhost_cdctest.dat").delete();
+            new File(offsetDir + "/syncflow_offset_postgresql_localhost_cdctest_default.dat").delete();
             stmt.execute("CREATE TABLE IF NOT EXISTS cdc_test_users (" +
                     "id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT NOW())");
             stmt.execute("CREATE TABLE IF NOT EXISTS cdc_test_orders (" +

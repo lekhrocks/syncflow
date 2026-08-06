@@ -59,10 +59,10 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
     /**
      * Called by subclass event parsers to record the latest offset after each
-     * event.
+     * event. Merges instead of replacing so per-table LSNs are retained (a single
+     * map would otherwise drop earlier tables' positions in a multi-table capture).
      */
     protected void updateOffset(Map<String, String> offset) {
-        lastOffset.clear();
         lastOffset.putAll(offset);
     }
 
@@ -174,7 +174,7 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
         // use FileOffsetBackingStore so offsets survive JVM restarts
         // each pipeline gets its own offset file keyed by pipeline id from context
-        var offsetFile = resolveOffsetFilePath(config);
+        var offsetFile = resolveOffsetFilePath(context);
         debeziumProps.setProperty("offset.storage",
                 "org.apache.kafka.connect.storage.FileOffsetBackingStore");
         debeziumProps.setProperty("offset.storage.file.filename", offsetFile);
@@ -296,15 +296,18 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
     /**
      * Resolve a stable per-pipeline offset file path.
-     * Uses the database name + host as a key so separate connections get separate
-     * files.
-     * subclasses supply the slot name keyed to the pipeline id.
+     * Keyed by connector + host + database + PIPELINE id so multiple pipelines on
+     * the same database get their own offset file (shared files corrupt resume).
      */
-    private String resolveOffsetFilePath(ConnectionConfiguration config) {
+    private String resolveOffsetFilePath(ConnectorContext context) {
+        var config = context.config();
         var dir = System.getProperty("java.io.tmpdir");
+        var pipelineKey = context.runtimeProperties().getOrDefault("pipelineId", "default");
+        var safePipeline = pipelineKey.replaceAll("[^a-zA-Z0-9_-]", "_");
         var key = connectorType().name().toLowerCase()
                 + "_" + config.host().replace(".", "_")
-                + "_" + config.database();
+                + "_" + config.database()
+                + "_" + safePipeline;
         return dir + "/syncflow_offset_" + key + ".dat";
     }
 }
