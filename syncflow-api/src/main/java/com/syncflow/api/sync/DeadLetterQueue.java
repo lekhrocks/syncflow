@@ -7,6 +7,7 @@ import com.syncflow.api.sync.repository.DeadLetterEventRepository;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.sync.FailureReason;
 import com.syncflow.core.sync.dlq.DeadLetterEvent;
+import com.syncflow.tenant.TenantSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -39,6 +40,7 @@ public class DeadLetterQueue {
         try {
             var entity = new DeadLetterEventEntity();
             entity.setId(UUID.randomUUID().toString());
+            entity.setTenantId(tenantId());
             entity.setPipelineId(pipelineId);
             // event may be null when enqueuing a failure without an associated CDC record
             entity.setEventId(event != null ? event.header().eventId() : null);
@@ -57,16 +59,21 @@ public class DeadLetterQueue {
 
     @Transactional(readOnly = true)
     public DeadLetterEvent get(String id) {
-        return repository.findById(id).map(this::toDomain).orElse(null);
+        return repository.findByIdAndTenantId(id, tenantId()).map(this::toDomain).orElse(null);
     }
 
     @Transactional(readOnly = true)
     public List<DeadLetterEvent> list(String pipelineId) {
         if (pipelineId == null) {
-            return repository.findAll().stream().map(this::toDomain).toList();
+            return repository.findByTenantIdOrderByCreatedAtDesc(tenantId())
+                    .stream().map(this::toDomain).toList();
         }
-        return repository.findByPipelineIdOrderByCreatedAtDesc(pipelineId)
+        return repository.findByPipelineIdAndTenantIdOrderByCreatedAtDesc(pipelineId, tenantId())
                 .stream().map(this::toDomain).toList();
+    }
+
+    private String tenantId() {
+        return TenantSupport.tenantId();
     }
 
     public void delete(String id) {

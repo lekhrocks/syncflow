@@ -8,6 +8,7 @@ import com.syncflow.common.exception.SyncFlowException;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.connection.ConnectionProperties;
 import com.syncflow.core.connection.Credentials;
+import com.syncflow.tenant.TenantSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ public class ConnectionService {
         var entity = mapper.toEntity(connection,
                 encryption.encrypt(credentials.username()),
                 encryption.encrypt(credentials.password()));
+        entity.setTenantId(tenantId());
         repository.save(entity);
         return connection;
     }
@@ -46,7 +48,7 @@ public class ConnectionService {
 
     @Transactional(readOnly = true)
     public List<Connection> list() {
-        return repository.findAll().stream()
+        return repository.findByTenantId(tenantId()).stream()
                 .map(this::toDomain)
                 .toList();
     }
@@ -83,8 +85,12 @@ public class ConnectionService {
     }
 
     private ConnectionEntity findEntity(String id) {
-        return repository.findById(id)
+        return repository.findByIdAndTenantId(id, tenantId())
                 .orElseThrow(() -> SyncFlowException.notFound("Connection", id));
+    }
+
+    private String tenantId() {
+        return TenantSupport.tenantId();
     }
 
     private Connection toDomain(ConnectionEntity entity) {
