@@ -6,6 +6,7 @@ import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.sync.SyncJob;
 import com.syncflow.core.sync.SyncStatistics;
 import com.syncflow.core.sync.dlq.DeadLetterEvent;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -41,7 +42,8 @@ public class SyncController {
      */
     @GetMapping(value = "/sync/jobs/{id}/events", produces = "text/event-stream")
     public SseEmitter syncEvents(@PathVariable String id) {
-        return broadcaster.subscribe(id);
+        var tenant = TenantContextHolder.getTenantId().value();
+        return broadcaster.subscribe(tenant + ":" + id);
     }
 
     @PostMapping("/pipelines/{id}/sync/start")

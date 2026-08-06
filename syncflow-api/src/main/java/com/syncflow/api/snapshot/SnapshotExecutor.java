@@ -22,6 +22,9 @@ import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.SnapshotCapableConnector;
 import com.syncflow.core.spi.writer.DestinationWriter;
 import com.syncflow.core.spi.writer.WriterRegistry;
+import com.syncflow.tenant.TenantContextHolder;
+import com.syncflow.tenant.TenantId;
+import com.syncflow.tenant.TenantSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
@@ -47,6 +50,7 @@ public class SnapshotExecutor {
     private final StatusBroadcaster broadcaster;
     private final Map<String, SnapshotJob> jobs = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> cancellations = new ConcurrentHashMap<>();
+    private final Map<String, String> tenantOf = new ConcurrentHashMap<>();
 
     public SnapshotExecutor(PipelineDesignerService pipelineService,
             ConnectionService connectionService,
@@ -67,37 +71,79 @@ public class SnapshotExecutor {
     public SnapshotJob start(String pipelineId) {
         var pipeline = pipelineService.get(pipelineId);
         var job = new SnapshotJob(pipelineId).withRunning();
-        jobs.put(job.getId().value(), job);
-        cancellations.put(job.getId().value(), new AtomicBoolean(false));
+        var snapshotId = job.getId().value();
+        jobs.put(snapshotId, job);
+        cancellations.put(snapshotId, new AtomicBoolean(false));
 
-        Thread.startVirtualThread(() -> execute(job, pipeline));
+        // Capture the tenant at request time; the worker's ThreadLocal won't see it.
+        var tenantId = TenantContextHolder.getTenantId();
+        tenantOf.put(snapshotId, tenantId.value());
+        Thread.startVirtualThread(() -> execute(tenantId, job, pipeline));
         return job;
     }
 
     public SnapshotJob get(String snapshotId) {
+        assertOwned(snapshotId);
         var job = jobs.get(snapshotId);
         if (job == null)
             throw new NoSuchElementException("Snapshot not found: " + snapshotId);
         return job;
     }
 
+    /** Cross-tenant access to a snapshot by id must be rejected. */
+    private void assertOwned(String snapshotId) {
+        var tenant = TenantContextHolder.getTenantId().value();
+        var owner = tenantOf.getOrDefault(snapshotId, TenantId.DEFAULT.value());
+        if (!tenant.equals(owner)) {
+            throw new NoSuchElementException("Snapshot not found: " + snapshotId);
+        }
+    }
+
+    /** Only the current tenant's snapshots. */
     public List<SnapshotJob> list() {
-        return List.copyOf(jobs.values());
+        var tenant = TenantContextHolder.getTenantId().value();
+        return jobs.entrySet().stream()
+                .filter(e -> tenant.equals(tenantOf.getOrDefault(
+                        e.getKey(), TenantId.DEFAULT.value())))
+                .map(Map.Entry::getValue)
+                .toList();
     }
 
     public SnapshotJob cancel(String snapshotId) {
+        assertOwned(snapshotId);
         var flag = cancellations.get(snapshotId);
         if (flag != null)
             flag.set(true);
         var job = jobs.get(snapshotId);
         if (job != null) {
             jobs.put(snapshotId, job.withCancelled());
+            // A cancelled snapshot is terminal; release its in-memory state.
+            remove(snapshotId);
             return job.withCancelled();
         }
         throw new NoSuchElementException("Snapshot not found: " + snapshotId);
     }
 
-    private void execute(SnapshotJob job, PipelineDesign pipeline) {
+    /** Release in-memory state for a terminal snapshot. */
+    private void remove(String snapshotId) {
+        jobs.remove(snapshotId);
+        cancellations.remove(snapshotId);
+        tenantOf.remove(snapshotId);
+    }
+
+    private void execute(TenantId tenantId, SnapshotJob job, PipelineDesign pipeline) {
+        // The request thread's ThreadLocal won't reach this virtual thread; set the
+        // tenant context so snapshot DB work is tenant-scoped. Carries a system
+        // identity so any background authz check resolves cleanly.
+        TenantContextHolder.set(TenantSupport.workerContext(tenantId));
+        try {
+            executeInner(job, pipeline);
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    private void executeInner(SnapshotJob job, PipelineDesign pipeline) {
         var timer = Timer.builder("syncflow.snapshot.duration")
                 .tag("pipeline", pipeline.id().value())
                 .register(meterRegistry);
@@ -222,6 +268,7 @@ public class SnapshotExecutor {
             var failed = job.withFailed(List.of(error));
             jobs.put(job.getId().value(), failed);
             emit(job.getId().value(), failed);
+            remove(job.getId().value());
             meterRegistry.counter("syncflow.snapshot.errors",
                     "pipeline", pipeline.id().value()).increment();
         }
@@ -229,7 +276,9 @@ public class SnapshotExecutor {
 
     /** Live-status event emitted on every progress/state change for a snapshot. */
     private void emit(String snapshotId, SnapshotJob job) {
-        broadcaster.emit(snapshotId, "snapshot-status", job);
+        // Tenant-scoped SSE key (matching the tenantOf map) so streams don't cross.
+        var key = tenantOf.getOrDefault(snapshotId, "default") + ":" + snapshotId;
+        broadcaster.emit(key, "snapshot-status", job);
     }
 
     private boolean isCancelled(SnapshotJob job) {

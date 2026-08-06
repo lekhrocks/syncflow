@@ -16,9 +16,15 @@ export function setAuthToken(token: string | null) {
   authToken = token;
 }
 
+/** Default tenant sent on authenticated requests (single-tenant default). */
+const TENANT_HEADER = 'X-Tenant-Id';
+
 api.interceptors.request.use((config) => {
   if (authToken) {
     config.headers.Authorization = `Bearer ${authToken}`;
+    // Authenticated requests must identify their tenant; use the single-tenant
+    // default unless overridden per request.
+    config.headers[TENANT_HEADER] = config.headers[TENANT_HEADER] ?? 'default';
   }
   return config;
 });
