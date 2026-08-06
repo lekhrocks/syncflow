@@ -1,6 +1,7 @@
 package com.syncflow.api.sse;
 
 import com.syncflow.api.config.AbstractIntegrationTest;
+import com.syncflow.tenant.TenantId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,9 +82,12 @@ class SseIntegrationTest extends AbstractIntegrationTest {
                     }
                 });
 
-        // Give the connection a moment to establish, then emit.
+        // Give the connection a moment to establish, then emit under the tenant
+        // scoped key the endpoint subscribed with (default tenant in the permissive
+        // test config).
         Thread.sleep(500);
-        broadcaster.emit("p-1", "sync-status", Map.of("state", "RUNNING", "pipelineId", "p-1"));
+        var defaultTenant = TenantId.DEFAULT.value(); // "00000000-..."
+        broadcaster.emit(defaultTenant + ":p-1", "sync-status", Map.of("state", "RUNNING", "pipelineId", "p-1"));
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "SSE event should be delivered");
         assertTrue(received.toString().contains("RUNNING"), "payload should carry the event data");
