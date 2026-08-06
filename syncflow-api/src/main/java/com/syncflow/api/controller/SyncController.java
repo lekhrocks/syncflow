@@ -1,5 +1,6 @@
 package com.syncflow.api.controller;
 
+import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.api.sync.DeadLetterQueue;
 import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.sync.SyncJob;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
@@ -23,10 +25,23 @@ public class SyncController {
 
     private final SyncOrchestrator orchestrator;
     private final DeadLetterQueue dlq;
+    private final StatusBroadcaster broadcaster;
 
-    public SyncController(SyncOrchestrator orchestrator, DeadLetterQueue dlq) {
+    public SyncController(SyncOrchestrator orchestrator, DeadLetterQueue dlq,
+            StatusBroadcaster broadcaster) {
         this.orchestrator = orchestrator;
         this.dlq = dlq;
+        this.broadcaster = broadcaster;
+    }
+
+    /**
+     * Live status stream for a sync job or pipeline: emits a "sync-status" event
+     * on every state/statistics change. The client uses EventSource; provide:
+     * {@code sync-status} events.
+     */
+    @GetMapping(value = "/sync/jobs/{id}/events", produces = "text/event-stream")
+    public SseEmitter syncEvents(@PathVariable String id) {
+        return broadcaster.subscribe(id);
     }
 
     @PostMapping("/pipelines/{id}/sync/start")

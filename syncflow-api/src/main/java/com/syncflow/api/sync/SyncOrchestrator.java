@@ -2,6 +2,7 @@ package com.syncflow.api.sync;
 
 import com.syncflow.api.cdc.CaptureLifecycle;
 import com.syncflow.api.pipeline.PipelineDesignerService;
+import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.cdc.CaptureStatus;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
@@ -41,6 +42,7 @@ public class SyncOrchestrator {
     private final RetryEngine retryEngine;
     private final DeadLetterQueue dlq;
     private final MeterRegistry meterRegistry;
+    private final StatusBroadcaster broadcaster;
 
     private final Map<String, SyncJob> jobs = new ConcurrentHashMap<>();
     private final Map<String, BlockingQueue<CDCEvent>> eventQueues = new ConcurrentHashMap<>();
@@ -54,7 +56,8 @@ public class SyncOrchestrator {
             EventIdempotencyStore idempotencyStore,
             RetryEngine retryEngine,
             DeadLetterQueue dlq,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            StatusBroadcaster broadcaster) {
         this.captureLifecycle = captureLifecycle;
         this.pipelineService = pipelineService;
         this.router = router;
@@ -62,6 +65,7 @@ public class SyncOrchestrator {
         this.retryEngine = retryEngine;
         this.dlq = dlq;
         this.meterRegistry = meterRegistry;
+        this.broadcaster = broadcaster;
     }
 
     public SyncJob start(String pipelineId) {
@@ -80,6 +84,7 @@ public class SyncOrchestrator {
         runningFlags.put(pipelineId, new AtomicBoolean(true));
         var queue = new LinkedBlockingQueue<CDCEvent>(QUEUE_CAPACITY);
         eventQueues.put(pipelineId, queue);
+        emit(job);
 
         var pipeline = pipelineService.get(pipelineId);
         var finalTm = pipeline.tableMappings().stream().findFirst().orElse(null);
@@ -105,6 +110,14 @@ public class SyncOrchestrator {
         if (job == null)
             throw new NoSuchElementException("No sync job for pipeline: " + pipelineId);
         return job;
+    }
+
+    /** Live-status event emitted on every state/statistics change for a pipeline. */
+    private void emit(SyncJob job) {
+        broadcaster.emit(job.getPipelineId(), "sync-status",
+                Map.of("pipelineId", job.getPipelineId(),
+                        "state", job.getState().name(),
+                        "statistics", job.getStatistics()));
     }
 
     public SyncState status(String pipelineId) {
@@ -160,8 +173,10 @@ public class SyncOrchestrator {
 
                 var stats = statsBuilder.build();
                 var job = jobs.get(pipelineId);
-                if (job != null)
+                if (job != null) {
                     jobs.put(pipelineId, job.withStatistics(stats));
+                    emit(job);
+                }
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -173,8 +188,10 @@ public class SyncOrchestrator {
         }
 
         var finalJob = jobs.get(pipelineId);
-        if (finalJob != null)
+        if (finalJob != null) {
             jobs.put(pipelineId, finalJob.withCompleted());
+            emit(finalJob);
+        }
     }
 
     private void processEvent(String pipelineId, CDCEvent event,

@@ -1,6 +1,7 @@
 package com.syncflow.api.controller;
 
 import com.syncflow.api.snapshot.SnapshotExecutor;
+import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.core.snapshot.SnapshotJob;
 import com.syncflow.core.snapshot.SnapshotProgress;
 import org.springframework.http.HttpStatus;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -18,9 +20,11 @@ import java.util.List;
 public class SnapshotController {
 
     private final SnapshotExecutor executor;
+    private final StatusBroadcaster broadcaster;
 
-    public SnapshotController(SnapshotExecutor executor) {
+    public SnapshotController(SnapshotExecutor executor, StatusBroadcaster broadcaster) {
         this.executor = executor;
+        this.broadcaster = broadcaster;
     }
 
     @PostMapping("/pipelines/{id}/snapshot")
@@ -43,6 +47,12 @@ public class SnapshotController {
     public ResponseEntity<SnapshotProgress> progress(@PathVariable String id) {
         var job = executor.get(id);
         return ResponseEntity.ok(job.getProgress());
+    }
+
+    /** Live progress/status stream for a snapshot ("snapshot-status" events). */
+    @GetMapping(value = "/snapshots/{id}/events", produces = "text/event-stream")
+    public SseEmitter snapshotEvents(@PathVariable String id) {
+        return broadcaster.subscribe(id);
     }
 
     @PostMapping("/snapshots/{id}/cancel")

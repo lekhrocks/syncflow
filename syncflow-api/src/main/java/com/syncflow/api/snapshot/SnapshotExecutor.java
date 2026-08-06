@@ -3,6 +3,7 @@ package com.syncflow.api.snapshot;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.metadata.ConnectorTypeMapper;
 import com.syncflow.api.pipeline.PipelineDesignerService;
+import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.pipeline.PipelineDesign;
@@ -43,6 +44,7 @@ public class SnapshotExecutor {
     private final WriterRegistry writerRegistry;
     private final CheckpointStore checkpointStore;
     private final MeterRegistry meterRegistry;
+    private final StatusBroadcaster broadcaster;
     private final Map<String, SnapshotJob> jobs = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> cancellations = new ConcurrentHashMap<>();
 
@@ -51,13 +53,15 @@ public class SnapshotExecutor {
             ConnectorRegistry connectorRegistry,
             WriterRegistry writerRegistry,
             CheckpointStore checkpointStore,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            StatusBroadcaster broadcaster) {
         this.pipelineService = pipelineService;
         this.connectionService = connectionService;
         this.connectorRegistry = connectorRegistry;
         this.writerRegistry = writerRegistry;
         this.checkpointStore = checkpointStore;
         this.meterRegistry = meterRegistry;
+        this.broadcaster = broadcaster;
     }
 
     public SnapshotJob start(String pipelineId) {
@@ -159,9 +163,11 @@ public class SnapshotExecutor {
                     rowsProcessed.addAndGet(batch.size());
                     batchesDone.incrementAndGet();
                     var pct = totalRows > 0 ? (double) rowsProcessed.get() / totalRows * 100 : 0;
-                    jobs.put(job.getId().value(), job.withProgress(
-                            new SnapshotProgress((int) batchesDone.get(), (int) totalBatches,
-                                    rowsProcessed.get(), totalRows, pct, 0)));
+                    var updated = job.withProgress(new SnapshotProgress(
+                            (int) batchesDone.get(), (int) totalBatches,
+                            rowsProcessed.get(), totalRows, pct, 0));
+                    jobs.put(job.getId().value(), updated);
+                    emit(job.getId().value(), updated);
 
                     meterRegistry.counter("syncflow.snapshot.rows",
                             "pipeline", pipeline.id().value()).increment(batch.size());
@@ -198,7 +204,9 @@ public class SnapshotExecutor {
                 var stats = new SnapshotStatistics(totalRows, rowsProcessed.get(),
                         batchesDone.get(), totalBatches, 0, 0,
                         job.getCreatedAt(), Instant.now(), elapsed / 1_000_000);
-                jobs.put(job.getId().value(), job.withCompleted(stats));
+                var completed = job.withCompleted(stats);
+                jobs.put(job.getId().value(), completed);
+                emit(job.getId().value(), completed);
                 checkpointStore.deleteAll(pipeline.id().value());
             }
         } catch (Exception e) {
@@ -211,10 +219,17 @@ public class SnapshotExecutor {
             }
             var error = new SnapshotError("SNAPSHOT_FAILED", e.getMessage(),
                     (int) batchesDone.get(), Instant.now());
-            jobs.put(job.getId().value(), job.withFailed(List.of(error)));
+            var failed = job.withFailed(List.of(error));
+            jobs.put(job.getId().value(), failed);
+            emit(job.getId().value(), failed);
             meterRegistry.counter("syncflow.snapshot.errors",
                     "pipeline", pipeline.id().value()).increment();
         }
+    }
+
+    /** Live-status event emitted on every progress/state change for a snapshot. */
+    private void emit(String snapshotId, SnapshotJob job) {
+        broadcaster.emit(snapshotId, "snapshot-status", job);
     }
 
     private boolean isCancelled(SnapshotJob job) {
