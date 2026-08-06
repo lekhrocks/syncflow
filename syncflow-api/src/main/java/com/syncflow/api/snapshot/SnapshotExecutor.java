@@ -101,20 +101,23 @@ public class SnapshotExecutor {
         var rowsProcessed = new AtomicLong(0);
         var batchesDone = new AtomicLong(0);
 
+        DestinationWriter writer = null;
         try {
             var sourceCtx = buildSourceContext(pipeline);
             var destCfg = buildDestConfig(pipeline);
             var connector = resolveSourceConnector(pipeline);
-            var writer = resolveWriter(pipeline);
+            writer = resolveWriter(pipeline);
 
             writer.connect(destCfg);
 
             long totalRows = 0;
             long totalBatches = 0;
-            if (!pipeline.tableMappings().isEmpty()) {
-                var tm = pipeline.tableMappings().getFirst();
-                totalRows = connector.estimateRows(sourceCtx, pipeline.source().schema(), tm.sourceTable());
-                totalBatches = (totalRows / pipeline.settings().batchSize()) + 1;
+            // Aggregate row/batch estimates across ALL mapped tables so progress %
+            // is meaningful for multi-table pipelines (not just the first mapping).
+            for (var tm : pipeline.tableMappings()) {
+                var tableRows = connector.estimateRows(sourceCtx, pipeline.source().schema(), tm.sourceTable());
+                totalRows += tableRows;
+                totalBatches += (tableRows / pipeline.settings().batchSize()) + 1;
             }
 
             var progress = SnapshotProgress.starting(totalRows);
@@ -126,10 +129,12 @@ public class SnapshotExecutor {
                 var ctx = new ProcessingContext(pipeline, tm);
 
                 var checkpoint = checkpointStore.get(pipeline.id().value(), tm.sourceTable());
-                int startBatch = (checkpoint != null) ? checkpoint.lastBatchNumber() + 1 : 0;
+                // Resume from the last checkpointed cursor; else start fresh.
+                String cursor = (checkpoint != null) ? checkpoint.cursor() : null;
+                int batchNumber = (checkpoint != null) ? checkpoint.lastBatchNumber() + 1 : 0;
 
-                var batchInfo = new BatchInformation(startBatch, pipeline.settings().batchSize(),
-                        tm.sourceTable(), null);
+                var batchInfo = new BatchInformation(batchNumber, pipeline.settings().batchSize(),
+                        tm.sourceTable(), cursor);
                 var page = connector.readBatch(sourceCtx, pipeline.source().schema(),
                         tm.sourceTable(), batchInfo);
 
@@ -161,23 +166,32 @@ public class SnapshotExecutor {
                     meterRegistry.counter("syncflow.snapshot.rows",
                             "pipeline", pipeline.id().value()).increment(batch.size());
 
-                    // checkpoint every 5 batches
+                    // Checkpoint every 5 batches — captures the keyed cursor so a
+                    // resume continues exactly at the next row (no OFFSET drift).
                     if (batchesDone.get() % 5 == 0) {
                         checkpointStore.save(new SnapshotCheckpoint(
                                 pipeline.id().value(), tm.sourceTable(),
-                                (int) batchesDone.get(), rowsProcessed.get(), null));
+                                (int) batchesDone.get(), rowsProcessed.get(),
+                                page.nextCursor()));
                     }
 
+                    // Next read continues from this page's cursor.
                     var nextBatchInfo = new BatchInformation(
                             (int) batchesDone.get(), pipeline.settings().batchSize(),
-                            tm.sourceTable(), null);
+                            tm.sourceTable(), page.nextCursor());
                     page = connector.readBatch(sourceCtx, pipeline.source().schema(),
                             tm.sourceTable(), nextBatchInfo);
                 }
             }
 
-            writer.flush();
-            writer.commit();
+            if (isCancelled(job)) {
+                // Do not commit partial writes on cancel — a later resume would
+                // duplicate the already-written rows.
+                writer.rollback();
+            } else {
+                writer.flush();
+                writer.commit();
+            }
 
             var elapsed = sample.stop(timer);
             if (!isCancelled(job)) {
@@ -189,6 +203,12 @@ public class SnapshotExecutor {
             }
         } catch (Exception e) {
             sample.stop(timer);
+            if (writer != null) {
+                try {
+                    writer.rollback();
+                } catch (Exception ignored) {
+                }
+            }
             var error = new SnapshotError("SNAPSHOT_FAILED", e.getMessage(),
                     (int) batchesDone.get(), Instant.now());
             jobs.put(job.getId().value(), job.withFailed(List.of(error)));

@@ -80,7 +80,9 @@ public class CaptureLifecycle {
                 .orElseThrow(() -> new IllegalArgumentException("No CDC connector for type: " + ct));
 
         var config = toConfig(conn);
-        var ctx = new ConnectorContext(config, Map.of());
+        // Key the Debezium offset file (and any connector state) per pipeline so
+        // multiple pipelines on the same database don't share/corrupt position.
+        var ctx = new ConnectorContext(config, Map.of("pipelineId", pipelineId));
 
         // pre-flight validation
         var validation = connector.validate(ctx);
