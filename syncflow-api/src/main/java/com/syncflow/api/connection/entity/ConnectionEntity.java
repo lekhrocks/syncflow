@@ -4,9 +4,13 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.Instant;
 
+@Setter
+@Getter
 @Entity
 @Table(name = "connections")
 public class ConnectionEntity {
@@ -14,6 +18,9 @@ public class ConnectionEntity {
     @Id
     @Column(length = 36)
     private String id;
+
+    @Column(name = "tenant_id", nullable = false, length = 36)
+    private String tenantId = "00000000-0000-0000-0000-000000000000";
 
     @Column(nullable = false, length = 255)
     private String name;
@@ -63,115 +70,4 @@ public class ConnectionEntity {
     public ConnectionEntity() {
     }
 
-    public String getId() {
-        return id;
-    }
-    public void setId(String id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getConnectionType() {
-        return connectionType;
-    }
-    public void setConnectionType(String connectionType) {
-        this.connectionType = connectionType;
-    }
-
-    public String getHost() {
-        return host;
-    }
-    public void setHost(String host) {
-        this.host = host;
-    }
-
-    public int getPort() {
-        return port;
-    }
-    public void setPort(int port) {
-        this.port = port;
-    }
-
-    public String getDatabase() {
-        return database;
-    }
-    public void setDatabase(String database) {
-        this.database = database;
-    }
-
-    public String getOptions() {
-        return options;
-    }
-    public void setOptions(String options) {
-        this.options = options;
-    }
-
-    public String getEncryptedUsername() {
-        return encryptedUsername;
-    }
-    public void setEncryptedUsername(String encryptedUsername) {
-        this.encryptedUsername = encryptedUsername;
-    }
-
-    public String getEncryptedPassword() {
-        return encryptedPassword;
-    }
-    public void setEncryptedPassword(String encryptedPassword) {
-        this.encryptedPassword = encryptedPassword;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public String getDbVersion() {
-        return dbVersion;
-    }
-    public void setDbVersion(String dbVersion) {
-        this.dbVersion = dbVersion;
-    }
-
-    public String getDriverName() {
-        return driverName;
-    }
-    public void setDriverName(String driverName) {
-        this.driverName = driverName;
-    }
-
-    public long getLastLatencyMs() {
-        return lastLatencyMs;
-    }
-    public void setLastLatencyMs(long lastLatencyMs) {
-        this.lastLatencyMs = lastLatencyMs;
-    }
-
-    public Instant getLastChecked() {
-        return lastChecked;
-    }
-    public void setLastChecked(Instant lastChecked) {
-        this.lastChecked = lastChecked;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
-    public void setUpdatedAt(Instant updatedAt) {
-        this.updatedAt = updatedAt;
-    }
 }

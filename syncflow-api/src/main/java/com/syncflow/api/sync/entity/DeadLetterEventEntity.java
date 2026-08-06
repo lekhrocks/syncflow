@@ -21,6 +21,9 @@ public class DeadLetterEventEntity {
     @Column(length = 36)
     private String id;
 
+    @Column(name = "tenant_id", nullable = false, length = 36)
+    private String tenantId = "00000000-0000-0000-0000-000000000000";
+
     @Column(name = "pipeline_id", nullable = false, length = 36)
     private String pipelineId;
 
