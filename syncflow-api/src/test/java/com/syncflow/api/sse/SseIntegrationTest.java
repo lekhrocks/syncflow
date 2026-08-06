@@ -90,4 +90,4 @@ class SseIntegrationTest extends AbstractIntegrationTest {
         body.join();
     }
 
-    }
+}

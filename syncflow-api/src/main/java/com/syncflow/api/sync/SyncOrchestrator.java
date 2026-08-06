@@ -112,7 +112,9 @@ public class SyncOrchestrator {
         return job;
     }
 
-    /** Live-status event emitted on every state/statistics change for a pipeline. */
+    /**
+     * Live-status event emitted on every state/statistics change for a pipeline.
+     */
     private void emit(SyncJob job) {
         broadcaster.emit(job.getPipelineId(), "sync-status",
                 Map.of("pipelineId", job.getPipelineId(),
