@@ -1,63 +1,72 @@
 {
   "title": "SyncFlow SRE Dashboard",
   "uid": "syncflow-sre",
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
   "panels": [
     {
+      "id": 1,
       "title": "SLO: API Availability (99.9%)",
       "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 3 },
       "targets": [{
-        "expr": "(sum(rate(http_requests_total{code=~\"2..|3..\"}[30d])) / sum(rate(http_requests_total[30d]))) * 100",
+        "expr": "(sum(rate(http_server_requests_seconds_count{status=~\"2\\\\d\\\\d|3\\\\d\\\\d\"}[30d])) / sum(rate(http_server_requests_seconds_count[30d]))) * 100",
         "legendFormat": "Availability"
-      }],
-      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 3}
+      }]
     },
     {
-      "title": "SLO: Pipeline Success Rate (99.5%)",
+      "id": 2,
+      "title": "SLO: Sync Success Rate (99.5%)",
       "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 3 },
       "targets": [{
-        "expr": "(sum(rate(syncflow_pipeline_operations_total{status!=\"error\"}[30d])) / sum(rate(syncflow_pipeline_operations_total[30d]))) * 100",
-        "legendFormat": "Pipeline Success"
-      }],
-      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 3}
+        "expr": "(sum(rate(syncflow_sync_events_processed_total[30d])) / (sum(rate(syncflow_sync_events_processed_total[30d])) + sum(rate(syncflow_sync_errors_total[30d])))) * 100",
+        "legendFormat": "Sync Success"
+      }]
     },
     {
+      "id": 3,
       "title": "Error Budget (30d rolling)",
       "type": "gauge",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 3 },
       "targets": [{
-        "expr": "1 - (sum(rate(http_requests_total{code=~\"5..\"}[30d])) / sum(rate(http_requests_total[30d]))) / 0.001",
+        "expr": "1 - (sum(rate(http_server_requests_seconds_count{status=~\"5\\\\d\\\\d\"}[30d])) / sum(rate(http_server_requests_seconds_count[30d]))) / 0.001",
         "legendFormat": "Error Budget"
-      }],
-      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 3}
+      }]
     },
     {
+      "id": 4,
       "title": "P99 Latency",
-      "type": "graph",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 3, "w": 6, "h": 4 },
       "targets": [{
-        "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+        "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket[5m])) by (le))",
         "legendFormat": "P99"
-      }],
-      "gridPos": {"x": 0, "y": 3, "w": 6, "h": 4}
+      }]
     },
     {
+      "id": 5,
       "title": "Events Processing Rate",
-      "type": "graph",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 3, "w": 6, "h": 4 },
       "targets": [
-        {"expr": "rate(syncflow_cdc_events_total[5m])", "legendFormat": "CDC Events/s"},
-        {"expr": "rate(syncflow_sync_events_processed_total[5m])", "legendFormat": "Sync Events/s"}
-      ],
-      "gridPos": {"x": 6, "y": 3, "w": 6, "h": 4}
+        { "expr": "rate(syncflow_cdc_events_total[5m])", "legendFormat": "CDC Events/s" },
+        { "expr": "rate(syncflow_sync_events_processed_total[5m])", "legendFormat": "Sync Events/s" }
+      ]
     },
     {
+      "id": 6,
       "title": "Queue Depth",
-      "type": "graph",
-      "targets": [{"expr": "syncflow_workflow_queue_size", "legendFormat": "Queue"}],
-      "gridPos": {"x": 0, "y": 7, "w": 6, "h": 3}
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 7, "w": 6, "h": 3 },
+      "targets": [{ "expr": "syncflow_workflow_queue_size", "legendFormat": "Queue" }]
     },
     {
+      "id": 7,
       "title": "Active Agents per Region",
-      "type": "graph",
-      "targets": [{"expr": "count by(region) (syncflow_agents_online)", "legendFormat": "{{region}}"}],
-      "gridPos": {"x": 6, "y": 7, "w": 6, "h": 3}
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 7, "w": 6, "h": 3 },
+      "targets": [{ "expr": "sum by(region) (syncflow_agents_online)", "legendFormat": "{{region}}" }]
     }
   ]
 }

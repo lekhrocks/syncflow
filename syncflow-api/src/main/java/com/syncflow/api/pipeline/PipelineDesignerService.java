@@ -21,6 +21,7 @@ import com.syncflow.core.pipeline.preview.PreviewFilter;
 import com.syncflow.core.pipeline.preview.PreviewTransformation;
 import com.syncflow.core.pipeline.validation.ValidationResult;
 import com.syncflow.tenant.TenantSupport;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,19 +39,22 @@ public class PipelineDesignerService {
     private final JsonMapper jsonMapper;
     private final PipelineValidator validator;
     private final MetadataDiscoveryService metadataService;
+    private final MeterRegistry meterRegistry;
 
     public PipelineDesignerService(PipelineDesignJpaRepository designRepo,
             PipelineDesignVersionJpaRepository versionRepo,
             PipelineDesignEntityMapper mapper,
             JsonMapper jsonMapper,
             PipelineValidator validator,
-            MetadataDiscoveryService metadataService) {
+            MetadataDiscoveryService metadataService,
+            MeterRegistry meterRegistry) {
         this.designRepo = designRepo;
         this.versionRepo = versionRepo;
         this.mapper = mapper;
         this.jsonMapper = jsonMapper;
         this.validator = validator;
         this.metadataService = metadataService;
+        this.meterRegistry = meterRegistry;
     }
 
     public PipelineDesign create(PipelineName name, SourceReference source,
@@ -62,6 +66,7 @@ public class PipelineDesignerService {
         entity.setTenantId(tenantId());
         designRepo.save(entity);
         saveVersion(entity, design);
+        meterRegistry.counter("syncflow.pipeline.operations", "op", "create").increment();
         return design;
     }
 
@@ -97,6 +102,7 @@ public class PipelineDesignerService {
         mapper.updateEntity(entity, updated, jsonMapper);
         designRepo.save(entity);
         saveVersion(entity, updated);
+        meterRegistry.counter("syncflow.pipeline.operations", "op", "update").increment();
         return updated;
     }
 
@@ -105,6 +111,7 @@ public class PipelineDesignerService {
         var entity = designRepo.findByIdAndTenantId(id, tenantId())
                 .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
         designRepo.delete(entity);
+        meterRegistry.counter("syncflow.pipeline.operations", "op", "delete").increment();
     }
 
     public ValidationResult validate(String id) {
@@ -139,6 +146,7 @@ public class PipelineDesignerService {
                         target.audit().createdBy()));
         mapper.updateEntity(entity, rolled, jsonMapper);
         designRepo.save(entity);
+        meterRegistry.counter("syncflow.pipeline.operations", "op", "rollback").increment();
         return rolled;
     }
 

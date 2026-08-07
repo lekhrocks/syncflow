@@ -129,6 +129,34 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
+  # ─── Optional: local observability (prometheus.yml in the repo is k8s SD,
+  # so compose uses its own static scrape config) ─────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: syncflow-prometheus
+    profiles: ["monitoring"]
+    depends_on:
+      - app
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../prometheus/prometheus-scrape.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: syncflow-grafana
+    profiles: ["monitoring"]
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ../grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ../grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+
 volumes:
   pgdata:
   mysqldata:

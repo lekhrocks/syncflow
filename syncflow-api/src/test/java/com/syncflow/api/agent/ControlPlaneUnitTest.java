@@ -3,6 +3,7 @@ package com.syncflow.api.agent;
 import com.syncflow.agent.domain.AgentId;
 import com.syncflow.agent.domain.AgentStatus;
 import com.syncflow.agent.domain.HardwareMetrics;
+import com.syncflow.api.ops.metrics.MetricsRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class ControlPlaneUnitTest {
 
     @BeforeEach
     void setUp() {
-        fleetManager = new FleetManager(new SimpleMeterRegistry());
+        fleetManager = new FleetManager(new MetricsRegistry(new SimpleMeterRegistry()));
     }
 
     // --- Heartbeat parser ---

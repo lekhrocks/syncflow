@@ -1,0 +1,10 @@
+# Local compose scrape config: the k8s prometheus.yml uses service discovery,
+# which does not exist in docker-compose. Static target for the app container.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'syncflow-app'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['app:8080']

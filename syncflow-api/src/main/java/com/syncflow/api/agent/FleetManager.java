@@ -4,7 +4,7 @@ import com.syncflow.agent.domain.Agent;
 import com.syncflow.agent.domain.AgentId;
 import com.syncflow.agent.domain.AgentStatus;
 import com.syncflow.agent.domain.HardwareMetrics;
-import io.micrometer.core.instrument.MeterRegistry;
+import com.syncflow.api.ops.metrics.MetricsRegistry;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -14,18 +14,35 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 @Component
 public class FleetManager {
 
     private final Map<AgentId, Agent> agents = new ConcurrentHashMap<>();
-    private final MeterRegistry meterRegistry;
+    private final MetricsRegistry metrics;
     private final AtomicLong agentCounter = new AtomicLong(0);
+    private final Map<String, LongAdder> onlineByRegion = new ConcurrentHashMap<>();
 
     private static final Duration HEARTBEAT_TIMEOUT = Duration.ofSeconds(60);
 
-    public FleetManager(MeterRegistry meterRegistry) {
-        this.meterRegistry = meterRegistry;
+    public FleetManager(MetricsRegistry metrics) {
+        this.metrics = metrics;
+    }
+
+    private void incOnline(String region) {
+        onlineByRegion.computeIfAbsent(region, r -> {
+            var adder = new LongAdder();
+            metrics.gauge("syncflow.agents.online", adder,
+                    a -> a.doubleValue(), "region", r);
+            return adder;
+        }).increment();
+    }
+
+    private void decOnline(String region) {
+        var adder = onlineByRegion.get(region);
+        if (adder != null)
+            adder.decrement();
     }
 
     public Agent register(String version, List<String> capabilities,
@@ -34,7 +51,7 @@ public class FleetManager {
         var agent = Agent.register(version, capabilities, labels, environment, region, hostname);
         agents.put(agent.id(), agent);
         agentCounter.incrementAndGet();
-        meterRegistry.gauge("syncflow.agents.online", agents.size());
+        incOnline(region);
         return agent;
     }
 
@@ -47,11 +64,19 @@ public class FleetManager {
     }
 
     public void markOffline(AgentId id) {
-        agents.computeIfPresent(id, (k, a) -> a.withStatus(AgentStatus.OFFLINE));
+        agents.computeIfPresent(id, (k, a) -> {
+            if (a.status() == AgentStatus.ONLINE)
+                decOnline(a.region());
+            return a.withStatus(AgentStatus.OFFLINE);
+        });
     }
 
     public void drain(AgentId id) {
-        agents.computeIfPresent(id, (k, a) -> a.withStatus(AgentStatus.DRAINING));
+        agents.computeIfPresent(id, (k, a) -> {
+            if (a.status() == AgentStatus.ONLINE)
+                decOnline(a.region());
+            return a.withStatus(AgentStatus.DRAINING);
+        });
     }
 
     public Optional<Agent> get(AgentId id) {
@@ -75,7 +100,11 @@ public class FleetManager {
     private void pruneOffline() {
         var threshold = Instant.now().minus(HEARTBEAT_TIMEOUT);
         agents.values().stream()
-                .filter(a -> a.lastHeartbeat().isBefore(threshold))
-                .forEach(a -> agents.put(a.id(), a.withStatus(AgentStatus.UNREACHABLE)));
+                .filter(a -> a.status() == AgentStatus.ONLINE
+                        && a.lastHeartbeat().isBefore(threshold))
+                .forEach(a -> {
+                    decOnline(a.region());
+                    agents.put(a.id(), a.withStatus(AgentStatus.UNREACHABLE));
+                });
     }
 }
