@@ -6,7 +6,7 @@ plugins {
 
 dependencies {
     api project(":syncflow-common")
-    api "org.springframework:spring-context:6.2.6"
+    api "org.springframework:spring-context:7.0.8"
     api libs.hibernate.validator
     api "org.slf4j:slf4j-api:2.0.17"
 
