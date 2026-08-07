@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { authApi, setAuthToken } from '../services/api';
+import { authApi, setAuthToken, setUnauthorizedHandler } from '../services/api';
 import type { UserResponse } from '../types/api';
 
 const TOKEN_KEY = 'syncflow.token';
@@ -56,6 +56,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthToken(null);
     setUser(null);
   }, []);
+
+  // On any 401, the shared axios interceptor triggers this to drop the session.
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   const refreshUser = useCallback(async () => {
     const me = await authApi.me();

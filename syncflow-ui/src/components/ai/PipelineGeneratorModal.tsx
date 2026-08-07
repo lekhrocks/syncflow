@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { Modal, Stepper, TextInput, Select, Button, Group, Stack, Text, Textarea, Loader } from '@mantine/core';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../../services/api';
 
 export function PipelineGeneratorModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const [active, setActive] = useState(0);

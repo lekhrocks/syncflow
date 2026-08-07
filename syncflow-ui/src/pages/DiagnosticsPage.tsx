@@ -1,12 +1,13 @@
-import { SimpleGrid, Paper, Title, Text, Group, ThemeIcon, Skeleton } from '@mantine/core';
+import { SimpleGrid, Paper, Title, Text, Group, ThemeIcon } from '@mantine/core';
 import { IconCpu, IconDatabase, IconServer } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { diagnosticsApi } from '../services/api';
+import { QueryState } from '../components/QueryState';
 
 export function DiagnosticsPage() {
-  const { data, isLoading } = useQuery({ queryKey: ['diagnostics-system'], queryFn: diagnosticsApi.system });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['diagnostics-system'], queryFn: diagnosticsApi.system });
 
-  if (isLoading) return <Skeleton height={400} />;
+  if (isLoading || isError) return <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} />;
 
   return (
     <div>

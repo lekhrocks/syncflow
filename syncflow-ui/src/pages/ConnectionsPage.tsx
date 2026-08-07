@@ -8,6 +8,7 @@ import { IconPlus, IconEdit, IconTrash, IconPlugConnected } from '@tabler/icons-
 import { useNavigate } from 'react-router';
 import { useState } from 'react';
 import type { CreateConnectionRequest, ConnectionResponse } from '../types/api';
+import { QueryState } from '../components/QueryState';
 
 const statusColor: Record<string, string> = { CREATED: 'gray', VALID: 'green', INVALID: 'red', ERROR: 'orange' };
 
@@ -17,7 +18,7 @@ export function ConnectionsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const { data, isLoading } = useQuery({ queryKey: ['connections'], queryFn: connectionApi.list });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['connections'], queryFn: connectionApi.list });
 
   const form = useForm<CreateConnectionRequest>({
     initialValues: { name: '', connectionType: 'POSTGRESQL', host: '', port: 5432, database: '', username: '', password: '' },
@@ -47,6 +48,7 @@ export function ConnectionsPage() {
         <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>New Connection</Button>
       </Group>
 
+      <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} isEmpty={!data?.length} />
       <Table highlightOnHover withTableBorder>
         <Table.Thead>
           <Table.Tr>

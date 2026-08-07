@@ -1,10 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Drawer, TextInput, Button, Stack, Text, Paper, Group, ScrollArea, Badge, ActionIcon } from '@mantine/core';
 import { IconSend, IconRobot, IconX } from '@tabler/icons-react';
-import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../../services/api';
 
 interface Message {
   role: 'user' | 'assistant';

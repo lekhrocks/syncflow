@@ -1,11 +1,10 @@
 import { Paper, Title, Table, Text, Badge, Group } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../services/api';
+import { QueryState } from '../components/QueryState';
 
 export function AuditPage() {
-  const { data } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['audit'],
     queryFn: () => api.get<{ id: string; action: string; entityType: string; entityId: string; success: boolean; timestamp: string; details: string }[]>('/audit').then(r => r.data),
   });
@@ -13,6 +12,7 @@ export function AuditPage() {
   return (
     <div>
       <Title order={2} mb="lg">Audit Trail</Title>
+      <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} isEmpty={!data?.length} />
       <Paper p="md" radius="md" withBorder>
         <Table highlightOnHover withTableBorder>
           <Table.Thead>

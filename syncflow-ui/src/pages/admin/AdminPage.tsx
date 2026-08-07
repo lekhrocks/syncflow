@@ -1,13 +1,12 @@
 import { Paper, Title, SimpleGrid, Text, Group, Button, Code, Badge, Stack } from '@mantine/core';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../../services/api';
+import { QueryState } from '../../components/QueryState';
 
 export function AdminPage() {
-  const { data: tenant } = useQuery({ queryKey: ['admin-me'], queryFn: () => api.get('/admin/tenants').then(r => r.data) });
-  const { data: audit } = useQuery({ queryKey: ['admin-audit'], queryFn: () => api.get('/admin/audit').then(r => r.data) });
-  const { data: quota } = useQuery({ queryKey: ['admin-quota'], queryFn: () => api.get('/admin/quotas').then(r => r.data) });
+  const { data: tenant, isLoading: tenantLoading, isError: tenantError, error: tenantErr, refetch: refetchTenant } = useQuery({ queryKey: ['admin-me'], queryFn: () => api.get('/admin/tenants').then(r => r.data) });
+  const { data: audit, isLoading: auditLoading, isError: auditError, error: auditErr, refetch: refetchAudit } = useQuery({ queryKey: ['admin-audit'], queryFn: () => api.get('/admin/audit').then(r => r.data) });
+  const { data: quota, isLoading: quotaLoading, isError: quotaError, error: quotaErr, refetch: refetchQuota } = useQuery({ queryKey: ['admin-quota'], queryFn: () => api.get('/admin/quotas').then(r => r.data) });
 
   const issueKey = useMutation({
     mutationFn: () => api.post('/admin/apikeys', { label: 'Dashboard Key', scope: 'READ', ttlSeconds: '2592000' }).then(r => r.data),
@@ -17,6 +16,13 @@ export function AdminPage() {
     <div>
       <Title order={2} mb="lg">Administration</Title>
 
+      <QueryState
+        isLoading={tenantLoading || auditLoading || quotaLoading}
+        isError={tenantError || auditError || quotaError}
+        error={tenantErr ?? auditErr ?? quotaErr}
+        retry={tenantError ? refetchTenant : auditError ? refetchAudit : refetchQuota}
+        isEmpty={!audit?.length}
+      />
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
         <Paper p="md" radius="md" withBorder>
           <Title order={4} mb="sm">Tenant Context</Title>

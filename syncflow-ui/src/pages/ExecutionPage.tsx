@@ -1,22 +1,21 @@
 import { Tabs, Title, Table, Badge, Group, Text, Progress } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
 import { useEventSource } from '../hooks/useEventSource';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../services/api';
+import { QueryState } from '../components/QueryState';
 
 const statusColors: Record<string, string> = {
   PENDING: 'gray', RUNNING: 'blue', COMPLETED: 'green', FAILED: 'red', CANCELLED: 'orange',
 };
 
 export function ExecutionPage() {
-  const { data: snapshots } = useQuery({
+  const { data: snapshots, isLoading: snapLoading, isError: snapError, error: snapErrorObj, refetch: refetchSnap } = useQuery({
     queryKey: ['snapshots'],
     queryFn: () => api.get('/snapshots').then(r => r.data),
     refetchInterval: 5000,
   });
 
-  const { data: syncJobs } = useQuery({
+  const { data: syncJobs, isLoading: syncLoading, isError: syncError, error: syncErrorObj, refetch: refetchSync } = useQuery({
     queryKey: ['sync-jobs'],
     queryFn: () => api.get('/sync/jobs').then(r => r.data),
     refetchInterval: 5000,
@@ -45,6 +44,7 @@ export function ExecutionPage() {
         </Tabs.List>
 
         <Tabs.Panel value="snapshots" pt="md">
+          <QueryState isLoading={snapLoading} isError={snapError} error={snapErrorObj} retry={refetchSnap} />
           <Table highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr><Table.Th>ID</Table.Th><Table.Th>Pipeline</Table.Th><Table.Th>Status</Table.Th><Table.Th>Progress</Table.Th><Table.Th>Rows</Table.Th></Table.Tr>
@@ -73,6 +73,7 @@ export function ExecutionPage() {
         </Tabs.Panel>
 
         <Tabs.Panel value="sync" pt="md">
+          <QueryState isLoading={syncLoading} isError={syncError} error={syncErrorObj} retry={refetchSync} />
           <Table highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr><Table.Th>ID</Table.Th><Table.Th>Pipeline</Table.Th><Table.Th>State</Table.Th><Table.Th>Processed</Table.Th><Table.Th>Failed</Table.Th></Table.Tr>

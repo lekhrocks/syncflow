@@ -2,8 +2,9 @@ import { useState, useCallback } from 'react';
 import { Paper, Title, Group, Button, Text, Badge, Table, SimpleGrid, Skeleton } from '@mantine/core';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
-import axios from 'axios';
 import { IconPlayerPlay, IconPlayerStop, IconPlus, IconGitBranch } from '@tabler/icons-react';
+import api from '../../services/api';
+import { QueryState } from '../../components/QueryState';
 import {
   ReactFlow,
   MiniMap,
@@ -16,8 +17,6 @@ import {
   MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-
-const api = axios.create({ baseURL: '/api' });
 
 const TASK_COLORS: Record<string, string> = {
   VALIDATION: '#228be6',
@@ -69,7 +68,7 @@ export function WorkflowPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  const { data: workflows, isLoading } = useQuery({
+  const { data: workflows, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => api.get('/workflows').then(r => r.data),
     refetchInterval: 5000,
@@ -119,6 +118,7 @@ export function WorkflowPage() {
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
         <Paper p="md" radius="md" withBorder>
           <Text fw={600} mb="md">Workflows</Text>
+          <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} isEmpty={!workflows?.length} />
           <Table highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr><Table.Th>ID</Table.Th><Table.Th>Pipeline</Table.Th><Table.Th>Status</Table.Th><Table.Th>Actions</Table.Th></Table.Tr>
