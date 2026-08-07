@@ -18,6 +18,7 @@ import com.syncflow.core.pipeline.PipelineSettings;
 import com.syncflow.core.pipeline.PipelineStatus;
 import com.syncflow.core.pipeline.SourceReference;
 import com.syncflow.core.pipeline.validation.ValidationResult;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -68,7 +69,7 @@ class PipelineDesignerServiceTest {
         jsonMapper = new JsonMapper(objectMapper);
         mapper = new PipelineDesignEntityMapperImpl();
         service = new PipelineDesignerService(designRepo, versionRepo, mapper, jsonMapper,
-                validator, metadataService);
+                validator, metadataService, new SimpleMeterRegistry());
     }
 
     // ── Test data helpers ────────────────────────────────────────────────────

@@ -1,60 +1,67 @@
 {
   "title": "SyncFlow Platform Overview",
   "uid": "syncflow-overview",
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
   "panels": [
     {
+      "id": 1,
       "title": "Pipeline Operations",
       "type": "stat",
-      "targets": [{
-        "expr": "sum(syncflow_pipeline_operations_total)",
-        "legendFormat": "Total Operations"
-      }],
-      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4}
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sum(syncflow_pipeline_operations_total)", "legendFormat": "Total Operations" }]
     },
     {
-      "title": "Active Pipelines",
-      "type": "stat",
-      "targets": [{
-        "expr": "count(syncflow_pipeline_status)",
-        "legendFormat": "Active"
-      }],
-      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4}
-    },
-    {
+      "id": 2,
       "title": "Events Captured / sec",
-      "type": "graph",
-      "targets": [{
-        "expr": "rate(syncflow_cdc_events_total[5m])",
-        "legendFormat": "events/s"
-      }],
-      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 4}
+      "type": "timeseries",
+      "gridPos": { "x": 4, "y": 0, "w": 8, "h": 4 },
+      "targets": [{ "expr": "rate(syncflow_cdc_events_total[5m])", "legendFormat": "events/s" }]
     },
     {
+      "id": 3,
       "title": "Sync Throughput",
-      "type": "graph",
-      "targets": [{
-        "expr": "rate(syncflow_sync_events_processed_total[5m])",
-        "legendFormat": "events/s"
-      }],
-      "gridPos": {"x": 0, "y": 4, "w": 8, "h": 4}
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 8, "h": 4 },
+      "targets": [{ "expr": "rate(syncflow_sync_events_processed_total[5m])", "legendFormat": "events/s" }]
     },
     {
+      "id": 4,
       "title": "Retries & Errors",
-      "type": "graph",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 4 },
       "targets": [
-        {"expr": "rate(syncflow_sync_retries_total[5m])", "legendFormat": "Retries"},
-        {"expr": "rate(syncflow_sync_errors_total[5m])", "legendFormat": "Errors"}
-      ],
-      "gridPos": {"x": 8, "y": 4, "w": 8, "h": 4}
+        { "expr": "rate(syncflow_sync_retries_total[5m])", "legendFormat": "Retries" },
+        { "expr": "rate(syncflow_sync_errors_total[5m])", "legendFormat": "Errors" }
+      ]
     },
     {
+      "id": 5,
+      "title": "Workflow Queue",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 6, "h": 4 },
+      "targets": [{ "expr": "syncflow_workflow_queue_size", "legendFormat": "Queue" }]
+    },
+    {
+      "id": 6,
+      "title": "Active Agents",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 4, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(syncflow_agents_online)", "legendFormat": "Agents" }]
+    },
+    {
+      "id": 7,
       "title": "JVM Memory",
-      "type": "graph",
-      "targets": [{
-        "expr": "jvm_memory_used_bytes{area='heap'}",
-        "legendFormat": "Heap Used"
-      }],
-      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 4}
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 4 },
+      "targets": [{ "expr": "jvm_memory_used_bytes{area='heap'}", "legendFormat": "Heap Used" }]
+    },
+    {
+      "id": 8,
+      "title": "API Throughput",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 4 },
+      "targets": [{ "expr": "sum(rate(http_server_requests_seconds_count[5m]))", "legendFormat": "req/s" }]
     }
   ]
 }
