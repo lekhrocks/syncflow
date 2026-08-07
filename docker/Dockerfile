@@ -8,6 +8,9 @@ RUN ./gradlew :syncflow-api:bootJar --no-daemon -x test
 
 # Stage 2: Runtime
 FROM eclipse-temurin:25-jre-alpine
+# Upgrade Alpine packages (p11-kit, ca-certificates, etc.) — the base image
+# ships stale versions with known CVEs (e.g. p11-kit-trust CVE-2026-2100).
+RUN apk --no-cache upgrade
 RUN addgroup -S syncflow && adduser -S syncflow -G syncflow
 
 WORKDIR /app

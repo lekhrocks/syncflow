@@ -73,6 +73,7 @@ public class MetadataDiscoveryService {
     }
 
     public MetadataResponse<TableMetadata> discoverTables(String connectionId, String schema) {
+        requireIdentifier(schema, "schema");
         var key = connectionId + ":tables:" + schema;
         var cached = cache.getTables(key);
         return cached.map(tableMetadata -> MetadataResponse.of(connectionId, "tables", tableMetadata, 0, true))
@@ -85,6 +86,7 @@ public class MetadataDiscoveryService {
     }
 
     public MetadataResponse<ColumnMetadata> discoverColumns(String connectionId, String schema, String table) {
+        requireIdentifiers(schema, table);
         var key = connectionId + ":columns:" + schema + "." + table;
         var cached = cache.getColumns(key);
         return cached.map(columnMetadata -> MetadataResponse.of(connectionId, "columns", columnMetadata, 0, true))
@@ -97,6 +99,7 @@ public class MetadataDiscoveryService {
     }
 
     public MetadataResponse<IndexMetadata> discoverIndexes(String connectionId, String schema, String table) {
+        requireIdentifiers(schema, table);
         var key = connectionId + ":indexes:" + schema + "." + table;
         var cached = cache.getIndexes(key);
         return cached.map(indexMetadata -> MetadataResponse.of(connectionId, "indexes", indexMetadata, 0, true))
@@ -109,6 +112,7 @@ public class MetadataDiscoveryService {
     }
 
     public MetadataResponse<ConstraintMetadata> discoverConstraints(String connectionId, String schema, String table) {
+        requireIdentifiers(schema, table);
         var key = connectionId + ":constraints:" + schema + "." + table;
         var cached = cache.getConstraints(key);
         return cached.map(
@@ -150,5 +154,25 @@ public class MetadataDiscoveryService {
                 ConnectorTypeMapper.toCore(props.type()),
                 props.host(), props.port(), props.database(),
                 creds.username(), creds.password(), props.options());
+    }
+
+    /**
+     * Reject schema/table identifiers that could break out of a quoted SQL
+     * identifier or inject arbitrary text into a query. These values are
+     * caller-supplied (URL path variables, pipeline designs, AI tool args) and
+     * eventually reach JDBC metadata calls and connector queries, so they must
+     * be plain identifiers — no quotes, no separators, no whitespace.
+     */
+    private void requireIdentifiers(String schema, String table) {
+        requireIdentifier(schema, "schema");
+        requireIdentifier(table, "table");
+    }
+
+    private void requireIdentifier(String value, String label) {
+        if (value == null || value.isBlank()
+                || !value.matches("[A-Za-z_][A-Za-z0-9_$]*")) {
+            throw new IllegalArgumentException(
+                    "Invalid " + label + " identifier: '" + value + "'");
+        }
     }
 }

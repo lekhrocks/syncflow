@@ -4,6 +4,15 @@ plugins {
     alias(libs.plugins.spring.dependency.management)
 }
 
+// GHSA-mhm7-754m-9p8w: jackson-databind @JsonView bypass. Spring Boot 3.5.16's
+// BOM pins jackson-bom 2.21.4 (vulnerable). Re-import the Jackson BOM at the
+// patched 2.21.5 AFTER Spring Boot's BOM so the later import wins.
+dependencyManagement {
+    imports {
+        mavenBom "com.fasterxml.jackson:jackson-bom:2.21.5"
+    }
+}
+
 dependencies {
     implementation project(":syncflow-core")
     implementation project(":syncflow-connectors")
@@ -28,6 +37,9 @@ dependencies {
     implementation libs.logback.classic
     implementation libs.mapstruct
     implementation "com.github.ben-manes.caffeine:caffeine:3.2.0"
+    // CVE-2025-48924: Spring Boot 3.5.16's BOM pins commons-lang3 3.17.0
+    // (vulnerable). Declare it directly at the patched 3.18.0 to override it.
+    implementation "org.apache.commons:commons-lang3:3.18.0"
 
     compileOnly libs.lombok
     annotationProcessor libs.lombok

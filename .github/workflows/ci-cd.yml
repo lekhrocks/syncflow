@@ -15,6 +15,11 @@ env:
   JAVA_VERSION: '25'
   NODE_VERSION: '20'
 
+# Least-privilege default: jobs only need to read the repo. Jobs that publish
+# (docker-build → ghcr) override with `packages: write`.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -23,6 +28,8 @@ jobs:
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -43,6 +50,8 @@ jobs:
     name: Compile
     needs: lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -68,6 +77,8 @@ jobs:
     name: Unit Tests
     needs: compile
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -103,6 +114,8 @@ jobs:
     name: Architecture Tests
     needs: unit-tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -127,6 +140,8 @@ jobs:
     name: Integration Tests
     needs: unit-tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -171,6 +186,8 @@ jobs:
     name: Mutation Testing
     needs: unit-tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -196,6 +213,8 @@ jobs:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -359,6 +378,8 @@ jobs:
     name: Helm Validation
     needs: docker-build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -380,6 +401,8 @@ jobs:
     if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     environment: staging
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -406,6 +429,8 @@ jobs:
     name: Smoke Tests
     needs: deploy-staging
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Health Check
         run: |
@@ -432,6 +457,8 @@ jobs:
     needs: [docker-build, security-scan, helm-validate, integration-tests]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     environment:
       name: production
       url: https://syncflow.example.com

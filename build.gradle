@@ -18,6 +18,23 @@ spotless {
 }
 
 // ──────────────────────────────────────────────
+//  Dependency resolution
+// ──────────────────────────────────────────────
+
+subprojects {
+    configurations.configureEach {
+        resolutionStrategy {
+            // CVE-2025-67030: plexus-utils directory traversal in extractFile.
+            // Pushed transitively by Debezium → maven-artifact; force the patched line.
+            force "org.codehaus.plexus:plexus-utils:3.6.1"
+            // CVE-2026-59949: lz4-java native XXHash can crash the JVM on invalid
+            // byte-array ranges. Pushed transitively by Kafka clients; force patched.
+            force "at.yawk.lz4:lz4-java:1.11.1"
+        }
+    }
+}
+
+// ──────────────────────────────────────────────
 //  OWASP Dependency-Check
 // ──────────────────────────────────────────────
 
