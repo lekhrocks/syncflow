@@ -36,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -158,7 +160,7 @@ class PipelineDesignerServiceTest {
         @Test
         void returnsDesignWhenFound() {
             var design = PipelineDesign.create(name("found"), source(), dest(), List.of(), settings());
-            when(designRepo.findById(design.id().value()))
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString()))
                     .thenReturn(Optional.of(entityFor(design)));
             var result = service.get(design.id().value());
             assertEquals("found", result.name().value());
@@ -166,13 +168,13 @@ class PipelineDesignerServiceTest {
 
         @Test
         void throwsNoSuchElementWhenNotFound() {
-            when(designRepo.findById("missing-id")).thenReturn(Optional.empty());
+            when(designRepo.findByIdAndTenantId(eq("missing-id"), anyString())).thenReturn(Optional.empty());
             assertThrows(NoSuchElementException.class, () -> service.get("missing-id"));
         }
 
         @Test
         void errorMessageContainsPipelineId() {
-            when(designRepo.findById("abc")).thenReturn(Optional.empty());
+            when(designRepo.findByIdAndTenantId(eq("abc"), anyString())).thenReturn(Optional.empty());
             var ex = assertThrows(NoSuchElementException.class, () -> service.get("abc"));
             assert ex.getMessage().contains("abc");
         }
@@ -186,7 +188,7 @@ class PipelineDesignerServiceTest {
 
         @Test
         void returnsEmptyListWhenNoDesigns() {
-            when(designRepo.findAll()).thenReturn(List.of());
+            when(designRepo.findByTenantId(anyString())).thenReturn(List.of());
             assertEquals(0, service.list().size());
         }
 
@@ -194,7 +196,7 @@ class PipelineDesignerServiceTest {
         void returnsAllDesigns() {
             var d1 = PipelineDesign.create(name("p1"), source(), dest(), List.of(), settings());
             var d2 = PipelineDesign.create(name("p2"), source(), dest(), List.of(), settings());
-            when(designRepo.findAll()).thenReturn(List.of(entityFor(d1), entityFor(d2)));
+            when(designRepo.findByTenantId(anyString())).thenReturn(List.of(entityFor(d1), entityFor(d2)));
             assertEquals(2, service.list().size());
         }
     }
@@ -209,7 +211,7 @@ class PipelineDesignerServiceTest {
         void incrementsVersion() {
             var design = PipelineDesign.create(name("original"), source(), dest(), List.of(), settings());
             var entity = entityFor(design);
-            when(designRepo.findById(design.id().value())).thenReturn(Optional.of(entity));
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString())).thenReturn(Optional.of(entity));
             var updated = service.update(design.id().value(), name("renamed"),
                     source(), dest(), List.of(), settings());
             assertEquals(2, updated.audit().version());
@@ -218,7 +220,8 @@ class PipelineDesignerServiceTest {
         @Test
         void updatesName() {
             var design = PipelineDesign.create(name("old-name"), source(), dest(), List.of(), settings());
-            when(designRepo.findById(design.id().value())).thenReturn(Optional.of(entityFor(design)));
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString()))
+                    .thenReturn(Optional.of(entityFor(design)));
             var updated = service.update(design.id().value(), name("new-name"),
                     source(), dest(), List.of(), settings());
             assertEquals("new-name", updated.name().value());
@@ -227,7 +230,8 @@ class PipelineDesignerServiceTest {
         @Test
         void savesEntityAndVersionOnUpdate() {
             var design = PipelineDesign.create(name("upd"), source(), dest(), List.of(), settings());
-            when(designRepo.findById(design.id().value())).thenReturn(Optional.of(entityFor(design)));
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString()))
+                    .thenReturn(Optional.of(entityFor(design)));
             service.update(design.id().value(), name("upd2"), source(), dest(), List.of(), settings());
             verify(designRepo).save(any(PipelineDesignEntity.class));
             verify(versionRepo).save(any(PipelineDesignVersionEntity.class));
@@ -235,7 +239,7 @@ class PipelineDesignerServiceTest {
 
         @Test
         void throwsWhenPipelineNotFound() {
-            when(designRepo.findById("x")).thenReturn(Optional.empty());
+            when(designRepo.findByIdAndTenantId(eq("x"), anyString())).thenReturn(Optional.empty());
             assertThrows(NoSuchElementException.class,
                     () -> service.update("x", name("n"), source(), dest(), List.of(), settings()));
         }
@@ -249,16 +253,18 @@ class PipelineDesignerServiceTest {
 
         @Test
         void deletesByIdWhenExists() {
-            when(designRepo.existsById("del-id")).thenReturn(true);
+            when(designRepo.findByIdAndTenantId(eq("del-id"), anyString()))
+                    .thenReturn(Optional.of(entityFor(PipelineDesign.create(
+                            name("del"), source(), dest(), List.of(), settings()))));
             service.delete("del-id");
-            verify(designRepo).deleteById("del-id");
+            verify(designRepo).delete(any(PipelineDesignEntity.class));
         }
 
         @Test
         void throwsWhenNotFound() {
-            when(designRepo.existsById("gone")).thenReturn(false);
+            when(designRepo.findByIdAndTenantId(eq("gone"), anyString())).thenReturn(Optional.empty());
             assertThrows(NoSuchElementException.class, () -> service.delete("gone"));
-            verify(designRepo, never()).deleteById(any());
+            verify(designRepo, never()).delete(any());
         }
     }
 
@@ -271,7 +277,8 @@ class PipelineDesignerServiceTest {
         @Test
         void delegatesToValidator() {
             var design = PipelineDesign.create(name("val"), source(), dest(), List.of(), settings());
-            when(designRepo.findById(design.id().value())).thenReturn(Optional.of(entityFor(design)));
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString()))
+                    .thenReturn(Optional.of(entityFor(design)));
             when(validator.validate(any(PipelineDesign.class)))
                     .thenReturn(new ValidationResult(true, List.of()));
             var result = service.validate(design.id().value());
@@ -288,6 +295,9 @@ class PipelineDesignerServiceTest {
 
         @Test
         void returnsEmptyListWhenNoVersions() {
+            when(designRepo.findByIdAndTenantId(eq("pid"), anyString()))
+                    .thenReturn(Optional.of(entityFor(PipelineDesign.create(
+                            name("pid"), source(), dest(), List.of(), settings()))));
             when(versionRepo.findByPipelineIdOrderByVersionAsc("pid")).thenReturn(List.of());
             assertEquals(0, service.versions("pid").size());
         }
@@ -299,6 +309,8 @@ class PipelineDesignerServiceTest {
             vEntity.setVersion(1);
             vEntity.setSnapshot(jsonMapper.toJson(design));
             vEntity.setSavedAt(Instant.now());
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString()))
+                    .thenReturn(Optional.of(entityFor(design)));
             when(versionRepo.findByPipelineIdOrderByVersionAsc(design.id().value()))
                     .thenReturn(List.of(vEntity));
             var versions = service.versions(design.id().value());
@@ -326,7 +338,7 @@ class PipelineDesignerServiceTest {
 
             when(versionRepo.findByPipelineIdAndVersion(design.id().value(), 1))
                     .thenReturn(Optional.of(vEntity));
-            when(designRepo.findById(design.id().value())).thenReturn(Optional.of(entity));
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString())).thenReturn(Optional.of(entity));
 
             var rolled = service.rollback(design.id().value(), 1);
             assertEquals("rollback-me", rolled.name().value());
@@ -334,6 +346,9 @@ class PipelineDesignerServiceTest {
 
         @Test
         void throwsWhenVersionNotFound() {
+            when(designRepo.findByIdAndTenantId(eq("pid"), anyString()))
+                    .thenReturn(Optional.of(entityFor(PipelineDesign.create(
+                            name("pid"), source(), dest(), List.of(), settings()))));
             when(versionRepo.findByPipelineIdAndVersion("pid", 99))
                     .thenReturn(Optional.empty());
             assertThrows(NoSuchElementException.class, () -> service.rollback("pid", 99));
@@ -351,7 +366,7 @@ class PipelineDesignerServiceTest {
 
             when(versionRepo.findByPipelineIdAndVersion(design.id().value(), 1))
                     .thenReturn(Optional.of(vEntity));
-            when(designRepo.findById(design.id().value())).thenReturn(Optional.of(entity));
+            when(designRepo.findByIdAndTenantId(eq(design.id().value()), anyString())).thenReturn(Optional.of(entity));
 
             service.rollback(design.id().value(), 1);
             verify(designRepo).save(any(PipelineDesignEntity.class));

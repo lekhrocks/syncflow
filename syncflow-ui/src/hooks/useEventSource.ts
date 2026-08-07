@@ -25,7 +25,9 @@ export function useEventSource<T>(path: string | null): { data: T | null; connec
     async function connect() {
       try {
         const res = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: token
+            ? { Authorization: `Bearer ${token}`, 'X-Tenant-Id': 'default' }
+            : {},
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {

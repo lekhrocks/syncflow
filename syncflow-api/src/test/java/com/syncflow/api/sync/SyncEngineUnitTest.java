@@ -25,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -223,9 +225,9 @@ class SyncEngineUnitTest {
         var e1 = dlqEntity("d1", "p-1", "e1");
         var e2 = dlqEntity("d2", "p-2", "e2");
         var e3 = dlqEntity("d3", "p-1", "e3");
-        when(dlqRepo.findByPipelineIdOrderByCreatedAtDesc("p-1"))
+        when(dlqRepo.findByPipelineIdAndTenantIdOrderByCreatedAtDesc(eq("p-1"), anyString()))
                 .thenReturn(List.of(e1, e3));
-        when(dlqRepo.findByPipelineIdOrderByCreatedAtDesc("p-2"))
+        when(dlqRepo.findByPipelineIdAndTenantIdOrderByCreatedAtDesc(eq("p-2"), anyString()))
                 .thenReturn(List.of(e2));
 
         var p1Events = dlq.list("p-1");
@@ -244,7 +246,7 @@ class SyncEngineUnitTest {
     void dlqListAllWhenPipelineIsNull() {
         var e1 = dlqEntity("d1", "p-1", "e1");
         var e2 = dlqEntity("d2", "p-2", "e2");
-        when(dlqRepo.findAll()).thenReturn(List.of(e1, e2));
+        when(dlqRepo.findByTenantIdOrderByCreatedAtDesc(anyString())).thenReturn(List.of(e1, e2));
         assertEquals(2, dlq.list(null).size());
     }
 

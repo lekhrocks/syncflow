@@ -20,6 +20,7 @@ import com.syncflow.core.pipeline.preview.PreviewColumn;
 import com.syncflow.core.pipeline.preview.PreviewFilter;
 import com.syncflow.core.pipeline.preview.PreviewTransformation;
 import com.syncflow.core.pipeline.validation.ValidationResult;
+import com.syncflow.tenant.TenantSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,6 +59,7 @@ public class PipelineDesignerService {
             PipelineSettings settings) {
         var design = PipelineDesign.create(name, source, destination, mappings, settings);
         var entity = mapper.toEntity(design, jsonMapper);
+        entity.setTenantId(tenantId());
         designRepo.save(entity);
         saveVersion(entity, design);
         return design;
@@ -65,14 +67,14 @@ public class PipelineDesignerService {
 
     @Transactional(readOnly = true)
     public PipelineDesign get(String id) {
-        return designRepo.findById(id)
+        return designRepo.findByIdAndTenantId(id, tenantId())
                 .map(e -> mapper.toDomain(e, jsonMapper))
                 .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
     }
 
     @Transactional(readOnly = true)
     public List<PipelineDesign> list() {
-        return designRepo.findAll().stream()
+        return designRepo.findByTenantId(tenantId()).stream()
                 .map(e -> mapper.toDomain(e, jsonMapper))
                 .toList();
     }
@@ -83,7 +85,7 @@ public class PipelineDesignerService {
             DestinationReference destination,
             List<TableMapping> mappings,
             PipelineSettings settings) {
-        var entity = designRepo.findById(id)
+        var entity = designRepo.findByIdAndTenantId(id, tenantId())
                 .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
         var existing = mapper.toDomain(entity, jsonMapper);
         var now = Instant.now();
@@ -100,10 +102,9 @@ public class PipelineDesignerService {
 
     @Transactional
     public void delete(String id) {
-        if (!designRepo.existsById(id)) {
-            throw new NoSuchElementException("Pipeline not found: " + id);
-        }
-        designRepo.deleteById(id);
+        var entity = designRepo.findByIdAndTenantId(id, tenantId())
+                .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
+        designRepo.delete(entity);
     }
 
     public ValidationResult validate(String id) {
@@ -115,6 +116,9 @@ public class PipelineDesignerService {
 
     @Transactional(readOnly = true)
     public List<PipelineDesign> versions(String id) {
+        // Version rows carry the same tenant; ensure the parent pipeline belongs to
+        // this tenant before listing its history.
+        get(id);
         return versionRepo.findByPipelineIdOrderByVersionAsc(id).stream()
                 .map(v -> jsonMapper.fromJson(v.getSnapshot(), PipelineDesign.class))
                 .toList();
@@ -122,12 +126,12 @@ public class PipelineDesignerService {
 
     @Transactional
     public PipelineDesign rollback(String id, int targetVersion) {
+        var entity = designRepo.findByIdAndTenantId(id, tenantId())
+                .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
         var versionEntity = versionRepo.findByPipelineIdAndVersion(id, targetVersion)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Version " + targetVersion + " not found for pipeline: " + id));
         var target = jsonMapper.fromJson(versionEntity.getSnapshot(), PipelineDesign.class);
-        var entity = designRepo.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
         var now = Instant.now();
         var rolled = new PipelineDesign(target.id(), target.name(), target.status(),
                 target.source(), target.destination(), target.tableMappings(), target.settings(),
@@ -198,6 +202,10 @@ public class PipelineDesignerService {
     }
 
     // ── Version snapshot ─────────────────────────────────────────────────────
+
+    private String tenantId() {
+        return TenantSupport.tenantId();
+    }
 
     private void saveVersion(PipelineDesignEntity entity, PipelineDesign design) {
         var v = new PipelineDesignVersionEntity();

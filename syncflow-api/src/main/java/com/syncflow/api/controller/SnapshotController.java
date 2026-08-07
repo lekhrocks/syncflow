@@ -4,6 +4,7 @@ import com.syncflow.api.snapshot.SnapshotExecutor;
 import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.core.snapshot.SnapshotJob;
 import com.syncflow.core.snapshot.SnapshotProgress;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,7 +53,8 @@ public class SnapshotController {
     /** Live progress/status stream for a snapshot ("snapshot-status" events). */
     @GetMapping(value = "/snapshots/{id}/events", produces = "text/event-stream")
     public SseEmitter snapshotEvents(@PathVariable String id) {
-        return broadcaster.subscribe(id);
+        var tenant = TenantContextHolder.getTenantId().value();
+        return broadcaster.subscribe(tenant + ":" + id);
     }
 
     @PostMapping("/snapshots/{id}/cancel")
