@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { Modal, TextInput, Button, Group, Stack, Text, Textarea, Select, Loader } from '@mantine/core';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../../services/api';
 
 export function MappingAssistantModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const [sourceConnId, setSourceConnId] = useState('');

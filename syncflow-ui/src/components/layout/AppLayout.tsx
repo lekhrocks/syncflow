@@ -1,5 +1,5 @@
 import { AppShell, Group, Text, ThemeIcon, UnstyledButton, Flex, ActionIcon } from '@mantine/core';
-import { IconDashboard, IconPlugConnected, IconSchema, IconPipeline, IconPlayerPlay, IconChartLine, IconShieldCheck, IconReportAnalytics, IconSettings, IconPackage, IconHierarchy, IconCloud, IconUsers, IconLogout } from '@tabler/icons-react';
+import { IconDashboard, IconPlugConnected, IconPipeline, IconPlayerPlay, IconChartLine, IconShieldCheck, IconReportAnalytics, IconSettings, IconPackage, IconHierarchy, IconCloud, IconUsers, IconLogout } from '@tabler/icons-react';
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { AiFloatingButton } from '../ai/AiFloatingButton';
@@ -7,7 +7,6 @@ import { AiFloatingButton } from '../ai/AiFloatingButton';
 const navItems = [
   { label: 'Dashboard', icon: IconDashboard, path: '/dashboard' },
   { label: 'Connections', icon: IconPlugConnected, path: '/connections' },
-  { label: 'Metadata', icon: IconSchema, path: '/connections' },
   { label: 'Pipelines', icon: IconPipeline, path: '/pipelines' },
   { label: 'Execution', icon: IconPlayerPlay, path: '/execution' },
   { label: 'Monitoring', icon: IconChartLine, path: '/monitoring' },
@@ -18,6 +17,7 @@ const navItems = [
   { label: 'Agents', icon: IconCloud, path: '/agents', adminOnly: true },
   { label: 'Admin', icon: IconSettings, path: '/admin', adminOnly: true },
   { label: 'Plugins', icon: IconPackage, path: '/marketplace' },
+  { label: 'Dead Letter Queue', icon: IconReportAnalytics, path: '/dlq' },
 ];
 
 export function AppLayout() {

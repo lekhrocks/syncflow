@@ -2,10 +2,11 @@ import { SimpleGrid, Paper, Title, Text, Skeleton } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardApi, diagnosticsApi } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { QueryState } from '../components/QueryState';
 
 export function MonitoringPage() {
-  const { data: overview } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardApi.overview, refetchInterval: 10_000 });
-  const { data: sys } = useQuery({ queryKey: ['diagnostics-system'], queryFn: diagnosticsApi.system });
+  const { data: overview, isLoading: ovLoading, isError: ovError, error: ovErr, refetch: refetchOv } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardApi.overview, refetchInterval: 10_000 });
+  const { data: sys, isLoading: sysLoading, isError: sysError, error: sysErr, refetch: refetchSys } = useQuery({ queryKey: ['diagnostics-system'], queryFn: diagnosticsApi.system });
 
   const throughput = [
     { name: 'Total Pipelines', value: overview?.pipelines.total ?? 0 },
@@ -27,6 +28,7 @@ export function MonitoringPage() {
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
         <Paper p="md" radius="md" withBorder>
           <Text fw={600} mb="md">Pipeline & Job Throughput</Text>
+          <QueryState isLoading={ovLoading} isError={ovError} error={ovErr} retry={refetchOv} />
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={throughput}>
               <CartesianGrid strokeDasharray="3 3" stroke="#333" />
@@ -40,6 +42,7 @@ export function MonitoringPage() {
 
         <Paper p="md" radius="md" withBorder>
           <Text fw={600} mb="md">Memory Usage (MB)</Text>
+          <QueryState isLoading={sysLoading} isError={sysError} error={sysErr} retry={refetchSys} isEmpty={memData.length === 0} />
           {memData.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={memData}>

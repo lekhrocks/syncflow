@@ -1,9 +1,10 @@
-import { SimpleGrid, Paper, Text, Group, ThemeIcon, Title, Skeleton } from '@mantine/core';
+import { SimpleGrid, Paper, Text, Group, ThemeIcon, Title } from '@mantine/core';
 import { IconPlugConnected, IconPipeline, IconPlayerPlay, IconAlertTriangle } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardApi } from '../services/api';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { QueryState } from '../components/QueryState';
 
 const COLORS = ['#228be6', '#40c057', '#fa5252', '#fab005'];
 
@@ -24,9 +25,9 @@ function MetricCard({ title, value, icon, color }: { title: string; value: numbe
 }
 
 export function DashboardPage() {
-  const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardApi.overview, refetchInterval: 10_000 });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardApi.overview, refetchInterval: 10_000 });
 
-  if (isLoading) return <Skeleton height={400} />;
+  if (isLoading || isError) return <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} />;
 
   const pipelineData = [
     { name: 'Total', value: data?.pipelines.total ?? 0 },

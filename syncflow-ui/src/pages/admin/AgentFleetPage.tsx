@@ -1,9 +1,8 @@
 import { Paper, Title, SimpleGrid, Text, Group, Badge, Table, Code, ThemeIcon, RingProgress, Tooltip } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
 import { IconServer, IconCpu, IconDeviceSdCard } from '@tabler/icons-react';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../../services/api';
+import { QueryState } from '../../components/QueryState';
 
 const STATUS_COLORS: Record<string, string> = {
   ONLINE: 'green',
@@ -15,7 +14,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function AgentFleetPage() {
-  const { data: agents } = useQuery({
+  const { data: agents, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['agents'],
     queryFn: () => api.get('/agents').then(r => r.data),
     refetchInterval: 5000,
@@ -26,6 +25,8 @@ export function AgentFleetPage() {
   return (
     <div>
       <Title order={2} mb="lg">Agent Fleet</Title>
+
+      <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} isEmpty={!agents?.length} />
 
       <SimpleGrid cols={{ base: 1, lg: 4 }} mb="lg">
         <Paper p="md" radius="md" withBorder>

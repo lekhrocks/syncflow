@@ -2,17 +2,16 @@ import { useState } from 'react';
 import { Paper, Title, SimpleGrid, Text, Group, Badge, Button, Stack, Code, Modal, FileInput, Table, ThemeIcon, ActionIcon } from '@mantine/core';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
-import axios from 'axios';
 import { IconPackage, IconUpload, IconPlayerPlay, IconPlayerStop, IconTrash, IconSettings } from '@tabler/icons-react';
-
-const api = axios.create({ baseURL: '/api' });
+import api from '../../services/api';
+import { QueryState } from '../../components/QueryState';
 
 export function MarketplacePage() {
   const queryClient = useQueryClient();
   const [installOpened, setInstallOpened] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const { data: plugins } = useQuery({
+  const { data: plugins, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['plugins'],
     queryFn: () => api.get('/plugins').then(r => r.data),
     refetchInterval: 5000,
@@ -55,6 +54,7 @@ export function MarketplacePage() {
         <Button leftSection={<IconUpload size={16} />} onClick={() => setInstallOpened(true)}>Install Plugin</Button>
       </Group>
 
+      <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} isEmpty={!plugins?.length} />
       <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="lg">
         {plugins?.map((plugin: any) => {
           const desc = plugin.descriptor || {};

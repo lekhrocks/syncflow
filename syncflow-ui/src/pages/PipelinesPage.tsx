@@ -1,14 +1,12 @@
-import { Table, Button, Group, Title, Text, Badge, ActionIcon, Modal, TextInput, Select, NumberInput } from '@mantine/core';
+import { Table, Button, Group, Title, Text, Badge, ActionIcon, Modal, TextInput } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import { notifications } from '@mantine/notifications';
 import { useForm } from '@mantine/form';
 import { IconPlus, IconEdit, IconTrash, IconPlayerPlay } from '@tabler/icons-react';
 import { useNavigate } from 'react-router';
-import { useState } from 'react';
-
-const api = axios.create({ baseURL: '/api' });
+import { QueryState } from '../components/QueryState';
+import api from '../services/api';
 
 const statusColor: Record<string, string> = { DRAFT: 'gray', VALIDATED: 'green', ACTIVATED: 'blue', ARCHIVED: 'orange' };
 
@@ -17,7 +15,7 @@ export function PipelinesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const { data } = useQuery({ queryKey: ['pipelines'], queryFn: () => api.get('/pipelines').then(r => r.data) });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['pipelines'], queryFn: () => api.get('/pipelines').then(r => r.data) });
 
   const form = useForm({
     initialValues: { name: '', sourceConnectionId: '', sourceSchema: '', sourceTable: '', destConnectionId: '', destSchema: '', destTable: '' },
@@ -26,7 +24,12 @@ export function PipelinesPage() {
 
   const mutation = useMutation({
     mutationFn: (req: any) => api.post('/pipelines', req),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['pipelines'] }); close(); form.reset(); notifications.show({ title: 'Created', message: 'Pipeline created', color: 'green' }); },
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['pipelines'] }); close(); form.reset(); notifications.show({ title: 'Created', message: 'Pipeline created', color: 'green' }); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/pipelines/${id}`),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['pipelines'] }); notifications.show({ title: 'Deleted', message: 'Pipeline deleted', color: 'green' }); },
   });
 
   return (
@@ -35,6 +38,8 @@ export function PipelinesPage() {
         <Title order={2}>Pipelines</Title>
         <Button leftSection={<IconPlus size={16} />} onClick={open}>New Pipeline</Button>
       </Group>
+
+      <QueryState isLoading={isLoading} isError={isError} error={error} retry={refetch} isEmpty={!data?.length} />
 
       <Table highlightOnHover withTableBorder>
         <Table.Thead>
@@ -51,7 +56,8 @@ export function PipelinesPage() {
               <Table.Td>
                 <Group gap="xs">
                   <ActionIcon variant="subtle" color="green" onClick={(e) => { e.stopPropagation(); api.post(`/pipelines/${p.id}/snapshot`).then(() => notifications.show({ title: 'Started', message: 'Snapshot started', color: 'green' })); }}><IconPlayerPlay size={16} /></ActionIcon>
-                  <ActionIcon variant="subtle" onClick={(e) => { e.stopPropagation(); }}><IconEdit size={16} /></ActionIcon>
+                  <ActionIcon variant="subtle" onClick={(e) => { e.stopPropagation(); navigate(`/pipelines/${p.id}/edit`); }}><IconEdit size={16} /></ActionIcon>
+                  <ActionIcon variant="subtle" color="red" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete pipeline "${p.name}"?`)) deleteMutation.mutate(p.id); }}><IconTrash size={16} /></ActionIcon>
                 </Group>
               </Table.Td>
             </Table.Tr>

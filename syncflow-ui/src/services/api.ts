@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { notifications } from '@mantine/notifications';
 import type {
   ConnectionResponse, CreateConnectionRequest, TestConnectionRequest,
   TestConnectionResponse, ConnectionHealthResponse, MetadataResponse,
@@ -28,6 +29,28 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Called on any 401 so AuthProvider can drop the session and redirect to login.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+// Central error surface: every request through this instance (and any page
+// using the shared `api`) gets a consistent toast. 401 clears the session.
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const status = err.response?.status;
+    if (status === 401) {
+      onUnauthorized?.();
+      return Promise.reject(err);
+    }
+    const message = err.response?.data?.message || err.message || 'Request failed';
+    notifications.show({ title: 'Error', message, color: 'red' });
+    return Promise.reject(err);
+  },
+);
 
 // --- Connections ---
 export const connectionApi = {
