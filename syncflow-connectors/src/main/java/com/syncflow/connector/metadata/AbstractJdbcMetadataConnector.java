@@ -104,7 +104,7 @@ public abstract class AbstractJdbcMetadataConnector implements MetadataCapableCo
 
     @Override
     public List<TableMetadata> fetchTables(ConnectorContext ctx, String schema) {
-        requireIdentifier(schema, "schema");
+        schema = requireIdentifier(schema, "schema");
         ensureConnected(ctx);
         var list = new ArrayList<TableMetadata>();
         try {
@@ -126,8 +126,8 @@ public abstract class AbstractJdbcMetadataConnector implements MetadataCapableCo
 
     @Override
     public List<ColumnMetadata> fetchColumns(ConnectorContext ctx, String schema, String table) {
-        requireIdentifier(schema, "schema");
-        requireIdentifier(table, "table");
+        schema = requireIdentifier(schema, "schema");
+        table = requireIdentifier(table, "table");
         ensureConnected(ctx);
         var cols = new ArrayList<ColumnMetadata>();
         try {
@@ -158,8 +158,8 @@ public abstract class AbstractJdbcMetadataConnector implements MetadataCapableCo
 
     @Override
     public List<IndexMetadata> fetchIndexes(ConnectorContext ctx, String schema, String table) {
-        requireIdentifier(schema, "schema");
-        requireIdentifier(table, "table");
+        schema = requireIdentifier(schema, "schema");
+        table = requireIdentifier(table, "table");
         ensureConnected(ctx);
         var map = new LinkedHashMap<String, IndexMetadata>();
         try {
@@ -184,8 +184,8 @@ public abstract class AbstractJdbcMetadataConnector implements MetadataCapableCo
 
     @Override
     public PrimaryKeyMetadata fetchPrimaryKey(ConnectorContext ctx, String schema, String table) {
-        requireIdentifier(schema, "schema");
-        requireIdentifier(table, "table");
+        schema = requireIdentifier(schema, "schema");
+        table = requireIdentifier(table, "table");
         ensureConnected(ctx);
         var cols = new ArrayList<String>();
         String name = null;
@@ -205,8 +205,8 @@ public abstract class AbstractJdbcMetadataConnector implements MetadataCapableCo
 
     @Override
     public List<ForeignKeyMetadata> fetchForeignKeys(ConnectorContext ctx, String schema, String table) {
-        requireIdentifier(schema, "schema");
-        requireIdentifier(table, "table");
+        schema = requireIdentifier(schema, "schema");
+        table = requireIdentifier(table, "table");
         ensureConnected(ctx);
         var map = new LinkedHashMap<String, ForeignKeyMetadata.Builder>();
         try {
@@ -272,16 +272,20 @@ public abstract class AbstractJdbcMetadataConnector implements MetadataCapableCo
     }
 
     /**
-     * Reject caller-supplied schema/table values that aren't plain SQL
-     * identifiers. These reach JDBC metadata calls and connector queries, so a
-     * value like `users; DROP TABLE x` must never be passed through.
+     * Validate a caller-supplied schema/table value as a plain SQL identifier
+     * and return it. These reach JDBC metadata calls and connector queries, so
+     * a value like `users; DROP TABLE x` must never be passed through.
+     *
+     * Returning the value keeps the taint flow explicit: the value handed to
+     * the JDBC call is the validator's output, not the raw user input.
      */
-    protected void requireIdentifier(String value, String label) {
+    protected String requireIdentifier(String value, String label) {
         if (value == null || value.isBlank()
                 || !value.matches("[A-Za-z_][A-Za-z0-9_$]*")) {
             throw new IllegalArgumentException(
                     "Invalid " + label + " identifier: '" + value + "'");
         }
+        return value;
     }
 
     protected String getStringOrNull(ResultSet rs, String col) throws SQLException {
