@@ -56,6 +56,11 @@ class CdcIntegrationTest extends AbstractIntegrationTest {
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
         registry.add("syncflow.jwt.secret",
                 () -> "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==");
+        // Durable Debezium offset store (JdbcOffsetBackingStore)
+        registry.add("offset.storage.jdbc.url", postgres::getJdbcUrl);
+        registry.add("offset.storage.jdbc.user", postgres::getUsername);
+        registry.add("offset.storage.jdbc.password", postgres::getPassword);
+        registry.add("offset.storage.jdbc.table.name", () -> "debezium_offsets");
     }
 
     private Connection sqlConnection;

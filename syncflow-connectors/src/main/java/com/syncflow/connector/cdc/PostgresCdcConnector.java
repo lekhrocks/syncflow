@@ -45,6 +45,12 @@ public class PostgresCdcConnector extends DebeziumCdcConnector {
         return "io.debezium.connector.postgresql.PostgresConnector";
     }
 
+    @Override
+    protected String jdbcUrl(ConnectionConfiguration config) {
+        return "jdbc:postgresql://" + config.host() + ":" + config.port()
+                + "/" + config.database();
+    }
+
     /**
      * slot name and publication name are scoped per pipeline using the
      * database name so multiple pipelines pointing to different databases don't
