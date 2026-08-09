@@ -26,4 +26,11 @@ public record WorkflowInstance(WorkflowId id, String pipelineId, WorkflowStatus 
         return new WorkflowInstance(WorkflowId.generate(), pipelineId, WorkflowStatus.PENDING,
                 tasks, List.of(), Instant.now(), null);
     }
+
+    /** Rebuild a persisted workflow instance. */
+    public static WorkflowInstance restore(WorkflowId id, String pipelineId, WorkflowStatus status,
+            List<WorkflowTask> tasks, List<TaskExecution> executions,
+            Instant createdAt, Instant completedAt) {
+        return new WorkflowInstance(id, pipelineId, status, tasks, executions, createdAt, completedAt);
+    }
 }

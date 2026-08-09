@@ -33,6 +33,8 @@ class DatabaseMigrationValidationTest extends AbstractIntegrationTest {
         r.add("spring.datasource.password", postgres::getPassword);
         r.add("spring.flyway.enabled", () -> "true");
         r.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+        r.add("syncflow.jwt.secret",
+                () -> "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==");
         r.add("spring.flyway.baseline-on-migrate", () -> "true");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }

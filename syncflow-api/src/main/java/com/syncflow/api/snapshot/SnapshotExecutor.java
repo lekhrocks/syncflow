@@ -3,6 +3,9 @@ package com.syncflow.api.snapshot;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.metadata.ConnectorTypeMapper;
 import com.syncflow.api.pipeline.PipelineDesignerService;
+import com.syncflow.api.runtimestate.RuntimeStateJson;
+import com.syncflow.api.snapshot.entity.SnapshotJobEntity;
+import com.syncflow.api.snapshot.repository.SnapshotJobRepository;
 import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.model.ConnectionConfiguration;
@@ -28,6 +31,7 @@ import com.syncflow.tenant.TenantSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -46,9 +50,14 @@ public class SnapshotExecutor {
     private final ConnectorRegistry connectorRegistry;
     private final WriterRegistry writerRegistry;
     private final CheckpointStore checkpointStore;
+    private final SnapshotJobRepository jobRepository;
+    private final RuntimeStateJson json;
     private final MeterRegistry meterRegistry;
     private final StatusBroadcaster broadcaster;
-    private final Map<String, SnapshotJob> jobs = new ConcurrentHashMap<>();
+
+    // In-memory worker state: cancellation flags + tenant ownership. The job
+    // payload itself is durable in snapshot_jobs; the in-memory job cache is a
+    // fast-path read (writes round-trip to Postgres on every state change).
     private final Map<String, AtomicBoolean> cancellations = new ConcurrentHashMap<>();
     private final Map<String, String> tenantOf = new ConcurrentHashMap<>();
 
@@ -57,6 +66,8 @@ public class SnapshotExecutor {
             ConnectorRegistry connectorRegistry,
             WriterRegistry writerRegistry,
             CheckpointStore checkpointStore,
+            SnapshotJobRepository jobRepository,
+            RuntimeStateJson json,
             MeterRegistry meterRegistry,
             StatusBroadcaster broadcaster) {
         this.pipelineService = pipelineService;
@@ -64,6 +75,8 @@ public class SnapshotExecutor {
         this.connectorRegistry = connectorRegistry;
         this.writerRegistry = writerRegistry;
         this.checkpointStore = checkpointStore;
+        this.jobRepository = jobRepository;
+        this.json = json;
         this.meterRegistry = meterRegistry;
         this.broadcaster = broadcaster;
     }
@@ -72,7 +85,7 @@ public class SnapshotExecutor {
         var pipeline = pipelineService.get(pipelineId);
         var job = new SnapshotJob(pipelineId).withRunning();
         var snapshotId = job.getId().value();
-        jobs.put(snapshotId, job);
+        persist(job);
         cancellations.put(snapshotId, new AtomicBoolean(false));
 
         // Capture the tenant at request time; the worker's ThreadLocal won't see it.
@@ -82,51 +95,40 @@ public class SnapshotExecutor {
         return job;
     }
 
+    @Transactional(readOnly = true)
     public SnapshotJob get(String snapshotId) {
-        assertOwned(snapshotId);
-        var job = jobs.get(snapshotId);
-        if (job == null)
-            throw new NoSuchElementException("Snapshot not found: " + snapshotId);
-        return job;
-    }
-
-    /** Cross-tenant access to a snapshot by id must be rejected. */
-    private void assertOwned(String snapshotId) {
-        var tenant = TenantContextHolder.getTenantId().value();
-        var owner = tenantOf.getOrDefault(snapshotId, TenantId.DEFAULT.value());
-        if (!tenant.equals(owner)) {
-            throw new NoSuchElementException("Snapshot not found: " + snapshotId);
-        }
+        return java.util.Optional.ofNullable(findOwned(snapshotId))
+                .map(this::toDomain)
+                .orElseThrow(() -> new NoSuchElementException("Snapshot not found: " + snapshotId));
     }
 
     /** Only the current tenant's snapshots. */
+    @Transactional(readOnly = true)
     public List<SnapshotJob> list() {
         var tenant = TenantContextHolder.getTenantId().value();
-        return jobs.entrySet().stream()
-                .filter(e -> tenant.equals(tenantOf.getOrDefault(
-                        e.getKey(), TenantId.DEFAULT.value())))
-                .map(Map.Entry::getValue)
+        return jobRepository.findByTenantIdOrderByCreatedAtDesc(tenant).stream()
+                .map(this::toDomain)
                 .toList();
     }
 
     public SnapshotJob cancel(String snapshotId) {
-        assertOwned(snapshotId);
         var flag = cancellations.get(snapshotId);
         if (flag != null)
             flag.set(true);
-        var job = jobs.get(snapshotId);
-        if (job != null) {
-            jobs.put(snapshotId, job.withCancelled());
-            // A cancelled snapshot is terminal; release its in-memory state.
-            remove(snapshotId);
-            return job.withCancelled();
-        }
-        throw new NoSuchElementException("Snapshot not found: " + snapshotId);
+        var job = java.util.Optional.ofNullable(findOwned(snapshotId))
+                .map(this::toDomain)
+                .orElseThrow(() -> new NoSuchElementException("Snapshot not found: " + snapshotId));
+        var cancelled = job.withCancelled();
+        persist(cancelled);
+        // A cancelled snapshot is terminal; release its in-memory state.
+        remove(snapshotId);
+        return cancelled;
     }
 
-    /** Release in-memory state for a terminal snapshot. */
+    /**
+     * Release in-memory worker state for a terminal snapshot (job stays durable).
+     */
     private void remove(String snapshotId) {
-        jobs.remove(snapshotId);
         cancellations.remove(snapshotId);
         tenantOf.remove(snapshotId);
     }
@@ -171,7 +173,7 @@ public class SnapshotExecutor {
             }
 
             var progress = SnapshotProgress.starting(totalRows);
-            jobs.put(job.getId().value(), job.withProgress(progress));
+            persist(job.withProgress(progress));
 
             for (var tm : pipeline.tableMappings()) {
                 if (isCancelled(job))
@@ -212,7 +214,7 @@ public class SnapshotExecutor {
                     var updated = job.withProgress(new SnapshotProgress(
                             (int) batchesDone.get(), (int) totalBatches,
                             rowsProcessed.get(), totalRows, pct, 0));
-                    jobs.put(job.getId().value(), updated);
+                    persist(updated);
                     emit(job.getId().value(), updated);
 
                     meterRegistry.counter("syncflow.snapshot.rows",
@@ -251,9 +253,12 @@ public class SnapshotExecutor {
                         batchesDone.get(), totalBatches, 0, 0,
                         job.getCreatedAt(), Instant.now(), elapsed / 1_000_000);
                 var completed = job.withCompleted(stats);
-                jobs.put(job.getId().value(), completed);
+                persist(completed);
                 emit(job.getId().value(), completed);
                 checkpointStore.deleteAll(pipeline.id().value());
+                // Terminal and durable; release worker state so the in-memory
+                // maps cannot grow unbounded across snapshots.
+                remove(job.getId().value());
             }
         } catch (Exception e) {
             sample.stop(timer);
@@ -266,7 +271,7 @@ public class SnapshotExecutor {
             var error = new SnapshotError("SNAPSHOT_FAILED", e.getMessage(),
                     (int) batchesDone.get(), Instant.now());
             var failed = job.withFailed(List.of(error));
-            jobs.put(job.getId().value(), failed);
+            persist(failed);
             emit(job.getId().value(), failed);
             remove(job.getId().value());
             meterRegistry.counter("syncflow.snapshot.errors",
@@ -284,6 +289,31 @@ public class SnapshotExecutor {
     private boolean isCancelled(SnapshotJob job) {
         var flag = cancellations.get(job.getId().value());
         return flag != null && flag.get();
+    }
+
+    private SnapshotJobEntity findOwned(String snapshotId) {
+        var tenant = TenantContextHolder.getTenantId().value();
+        return jobRepository.findById(snapshotId)
+                .filter(e -> tenant.equals(e.getTenantId()))
+                .orElse(null);
+    }
+
+    @Transactional
+    private void persist(SnapshotJob job) {
+        var entity = jobRepository.findById(job.getId().value())
+                .orElseGet(SnapshotJobEntity::new);
+        entity.setId(job.getId().value());
+        entity.setTenantId(TenantSupport.tenantId());
+        entity.setPipelineId(job.getPipelineId());
+        entity.setStatus(job.getStatus().name());
+        entity.setPayload(json.toJson(job));
+        entity.setCreatedAt(job.getCreatedAt());
+        entity.setUpdatedAt(Instant.now());
+        jobRepository.save(entity);
+    }
+
+    private SnapshotJob toDomain(SnapshotJobEntity e) {
+        return json.fromJson(e.getPayload(), SnapshotJob.class);
     }
 
     private ConnectorContext buildSourceContext(PipelineDesign pipeline) {

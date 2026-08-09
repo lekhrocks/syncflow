@@ -9,6 +9,7 @@ import com.syncflow.core.connection.ConnectionProperties;
 import com.syncflow.core.connection.ConnectionType;
 import com.syncflow.core.connection.Credentials;
 import com.syncflow.core.connection.spi.ConnectorFactory;
+import com.syncflow.api.security.rbac.AuthorizationService;
 import com.syncflow.api.config.versioning.VersionContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,9 @@ class ConnectionControllerTest {
 
     @MockitoBean
     private ConnectorFactory connectorFactory;
+
+    @MockitoBean
+    private AuthorizationService authz;
 
     @Test
     void createConnection_returns201() throws Exception {

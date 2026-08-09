@@ -1,5 +1,7 @@
 package com.syncflow.api.controller;
 
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.api.snapshot.SnapshotExecutor;
 import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.core.snapshot.SnapshotJob;
@@ -22,30 +24,37 @@ public class SnapshotController {
 
     private final SnapshotExecutor executor;
     private final StatusBroadcaster broadcaster;
+    private final AuthorizationService authz;
 
-    public SnapshotController(SnapshotExecutor executor, StatusBroadcaster broadcaster) {
+    public SnapshotController(SnapshotExecutor executor, StatusBroadcaster broadcaster,
+            AuthorizationService authz) {
         this.executor = executor;
         this.broadcaster = broadcaster;
+        this.authz = authz;
     }
 
     @PostMapping("/pipelines/{id}/snapshot")
     public ResponseEntity<SnapshotJob> start(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         var job = executor.start(id);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(job);
     }
 
     @GetMapping("/snapshots")
     public ResponseEntity<List<SnapshotJob>> list() {
+        authz.require(ResourcePermission.EXECUTION_READ);
         return ResponseEntity.ok(executor.list());
     }
 
     @GetMapping("/snapshots/{id}")
     public ResponseEntity<SnapshotJob> get(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         return ResponseEntity.ok(executor.get(id));
     }
 
     @GetMapping("/snapshots/{id}/progress")
     public ResponseEntity<SnapshotProgress> progress(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         var job = executor.get(id);
         return ResponseEntity.ok(job.getProgress());
     }
@@ -53,12 +62,14 @@ public class SnapshotController {
     /** Live progress/status stream for a snapshot ("snapshot-status" events). */
     @GetMapping(value = "/snapshots/{id}/events", produces = "text/event-stream")
     public SseEmitter snapshotEvents(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         var tenant = TenantContextHolder.getTenantId().value();
         return broadcaster.subscribe(tenant + ":" + id);
     }
 
     @PostMapping("/snapshots/{id}/cancel")
     public ResponseEntity<SnapshotJob> cancel(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         return ResponseEntity.ok(executor.cancel(id));
     }
 }

@@ -21,7 +21,20 @@ public class EncryptionService {
     private final SecureRandom secureRandom;
 
     public EncryptionService(@Value("${syncflow.encryption.key}") String base64Key) {
-        var decoded = Base64.getDecoder().decode(base64Key);
+        if (base64Key == null || base64Key.isBlank()) {
+            throw new IllegalStateException("syncflow.encryption.key is not configured. "
+                    + "Set a base64-encoded AES key (16/24/32 bytes) via env SYNCFLOW_ENCRYPTION_KEY.");
+        }
+        final byte[] decoded;
+        try {
+            decoded = Base64.getDecoder().decode(base64Key);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("syncflow.encryption.key is not valid base64", e);
+        }
+        if (decoded.length != 16 && decoded.length != 24 && decoded.length != 32) {
+            throw new IllegalStateException("syncflow.encryption.key decodes to " + decoded.length
+                    + " bytes; AES requires 16, 24, or 32 bytes.");
+        }
         this.key = new SecretKeySpec(decoded, "AES");
         this.secureRandom = new SecureRandom();
     }

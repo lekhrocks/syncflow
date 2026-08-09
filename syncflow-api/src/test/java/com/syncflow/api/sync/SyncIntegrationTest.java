@@ -48,6 +48,8 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+        registry.add("syncflow.jwt.secret",
+                () -> "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==");
     }
 
     @BeforeEach
@@ -100,6 +102,7 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
             var events = dlq.list("p-1");
             if (!events.isEmpty()) {
                 given()
+                        .header("Authorization", "Bearer " + adminToken("default"))
                         .when().delete("/api/dlq/{id}", events.getFirst().id())
                         .then()
                         .statusCode(204);

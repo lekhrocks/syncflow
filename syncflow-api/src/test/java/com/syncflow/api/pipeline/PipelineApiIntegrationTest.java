@@ -32,6 +32,8 @@ class PipelineApiIntegrationTest extends AbstractIntegrationTest {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+        registry.add("syncflow.jwt.secret",
+                () -> "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==");
     }
 
     private String createdPipelineId;
@@ -153,6 +155,7 @@ class PipelineApiIntegrationTest extends AbstractIntegrationTest {
                 .path("id");
 
         given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .when().delete("/api/pipelines/{id}", id)
                 .then()
                 .statusCode(204);

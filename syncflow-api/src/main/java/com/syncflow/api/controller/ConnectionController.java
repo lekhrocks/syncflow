@@ -1,6 +1,8 @@
 package com.syncflow.api.controller;
 
 import com.syncflow.api.connection.dto.ConnectionHealthResponse;
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.api.connection.dto.ConnectionResponse;
 import com.syncflow.api.connection.dto.CreateConnectionRequest;
 import com.syncflow.api.connection.dto.TestConnectionRequest;
@@ -31,15 +33,19 @@ public class ConnectionController {
 
     private final ConnectionService connectionService;
     private final ConnectorFactory connectorFactory;
+    private final AuthorizationService authz;
 
     public ConnectionController(ConnectionService connectionService,
-            ConnectorFactory connectorFactory) {
+            ConnectorFactory connectorFactory,
+            AuthorizationService authz) {
         this.connectionService = connectionService;
         this.connectorFactory = connectorFactory;
+        this.authz = authz;
     }
 
     @PostMapping
     public ResponseEntity<ConnectionResponse> create(@Valid @RequestBody CreateConnectionRequest req) {
+        authz.require(ResourcePermission.CONNECTION_WRITE);
         var props = new ConnectionProperties(req.connectionType(), req.host(), req.port(),
                 req.database(), req.options() != null ? req.options() : Map.of());
         var credentials = new Credentials(
@@ -52,6 +58,7 @@ public class ConnectionController {
 
     @GetMapping
     public ResponseEntity<List<ConnectionResponse>> list() {
+        authz.require(ResourcePermission.CONNECTION_READ);
         var list = connectionService.list().stream()
                 .map(c -> ConnectionResponse.from(c, true))
                 .toList();
@@ -60,6 +67,7 @@ public class ConnectionController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ConnectionResponse> get(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(ConnectionResponse.from(connectionService.get(id), true));
     }
 
@@ -67,6 +75,7 @@ public class ConnectionController {
     public ResponseEntity<ConnectionResponse> update(
             @PathVariable String id,
             @Valid @RequestBody UpdateConnectionRequest req) {
+        authz.require(ResourcePermission.CONNECTION_WRITE);
         var existing = connectionService.get(id);
         var props = new ConnectionProperties(existing.getProperties().type(),
                 req.host(), req.port(), req.database(),
@@ -83,12 +92,14 @@ public class ConnectionController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_DELETE);
         connectionService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/test")
     public ResponseEntity<TestConnectionResponse> test(@Valid @RequestBody TestConnectionRequest req) {
+        authz.require(ResourcePermission.CONNECTION_WRITE);
         var props = new ConnectionProperties(req.connectionType(), req.host(), req.port(),
                 req.database(), req.options() != null ? req.options() : Map.of());
         var credentials = new Credentials(
@@ -112,6 +123,7 @@ public class ConnectionController {
 
     @GetMapping("/{id}/health")
     public ResponseEntity<ConnectionHealthResponse> health(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         var connection = connectionService.getWithDecryptedCredentials(id);
         var validator = connectorFactory.getValidator(connection.getProperties().type());
         if (validator.isEmpty()) {

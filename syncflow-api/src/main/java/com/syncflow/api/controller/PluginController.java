@@ -1,6 +1,8 @@
 package com.syncflow.api.controller;
 
 import com.syncflow.api.plugin.PluginManager;
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.api.plugin.PluginManager.PluginEntry;
 import com.syncflow.api.plugin.PluginManager.PluginInstallResult;
 import org.springframework.http.ResponseEntity;
@@ -22,18 +24,22 @@ import java.util.Map;
 public class PluginController {
 
     private final PluginManager pluginManager;
+    private final AuthorizationService authz;
 
-    public PluginController(PluginManager pluginManager) {
+    public PluginController(PluginManager pluginManager, AuthorizationService authz) {
         this.pluginManager = pluginManager;
+        this.authz = authz;
     }
 
     @GetMapping
     public ResponseEntity<List<PluginEntry>> list() {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(pluginManager.list());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<PluginEntry> get(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return pluginManager.get(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -41,6 +47,7 @@ public class PluginController {
 
     @PostMapping("/install")
     public ResponseEntity<PluginInstallResult> install(@RequestParam("file") MultipartFile file) {
+        authz.require(ResourcePermission.PIPELINE_WRITE);
         try {
             var temp = File.createTempFile("plugin-", ".jar");
             file.transferTo(temp);
@@ -55,24 +62,28 @@ public class PluginController {
 
     @PostMapping("/{id}/enable")
     public ResponseEntity<Map<String, Object>> enable(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_WRITE);
         var ok = pluginManager.enable(id);
         return ResponseEntity.ok(Map.of("pluginId", id, "enabled", ok));
     }
 
     @PostMapping("/{id}/disable")
     public ResponseEntity<Map<String, Object>> disable(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_WRITE);
         var ok = pluginManager.disable(id);
         return ResponseEntity.ok(Map.of("pluginId", id, "disabled", ok));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> uninstall(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_DELETE);
         var ok = pluginManager.uninstall(id);
         return ResponseEntity.ok(Map.of("pluginId", id, "uninstalled", ok));
     }
 
     @GetMapping("/{id}/capabilities")
     public ResponseEntity<Map<String, Object>> capabilities(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return pluginManager.get(id)
                 .map(entry -> {
                     var caps = entry.connector().capabilities();
