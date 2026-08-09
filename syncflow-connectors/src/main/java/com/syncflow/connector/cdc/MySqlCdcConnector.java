@@ -43,12 +43,6 @@ public class MySqlCdcConnector extends DebeziumCdcConnector {
     }
 
     @Override
-    protected String jdbcUrl(ConnectionConfiguration config) {
-        return "jdbc:mysql://" + config.host() + ":" + config.port()
-                + "/" + config.database();
-    }
-
-    @Override
     protected Properties specificProperties(ConnectionConfiguration config) {
         var props = new Properties();
         props.setProperty("database.server.name", "syncflow_mysql_" + sanitize(config.database()));

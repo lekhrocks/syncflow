@@ -10,7 +10,6 @@ import com.syncflow.core.sync.dlq.DeadLetterEvent;
 import com.syncflow.tenant.TenantSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,15 +30,10 @@ public class DeadLetterQueue {
 
     private final DeadLetterEventRepository repository;
     private final ObjectMapper objectMapper;
-    // @Lazy breaks the cycle: SyncOrchestrator → DeadLetterQueue → SyncOrchestrator.
-    // Used only for replay re-enqueue, resolved on first use.
-    private final SyncOrchestrator syncOrchestrator;
 
-    public DeadLetterQueue(DeadLetterEventRepository repository, ObjectMapper objectMapper,
-            @Lazy SyncOrchestrator syncOrchestrator) {
+    public DeadLetterQueue(DeadLetterEventRepository repository, ObjectMapper objectMapper) {
         this.repository = repository;
         this.objectMapper = objectMapper;
-        this.syncOrchestrator = syncOrchestrator;
     }
 
     public void add(String pipelineId, CDCEvent event, FailureReason reason, int retryCount) {
@@ -91,22 +85,8 @@ public class DeadLetterQueue {
     }
 
     public void replay(String id) {
-        var entity = repository.findByIdAndTenantId(id, tenantId()).orElse(null);
-        if (entity == null) {
-            log.warn("DLQ replay skipped: event not found id={}", id);
-            return;
-        }
-        var event = toDomain(entity);
         repository.markReplayed(id);
-        log.info("DLQ event marked for replay id={} pipeline={}",
-                id, event != null ? event.pipelineId() : "unknown");
-        // Re-enqueue the stored event so the sync engine actually retries it —
-        // replay must do work, not just flip a flag. syncOrchestrator is @Lazy
-        // and null in pure unit tests; guard so replay degrades gracefully.
-        if (event != null && event.originalEvent() != null && syncOrchestrator != null) {
-            syncOrchestrator.submitEvent(event.pipelineId(), event.originalEvent());
-            log.info("DLQ event re-enqueued for processing id={}", id);
-        }
+        log.info("DLQ event marked for replay id={}", id);
     }
 
     @Transactional(readOnly = true)

@@ -54,12 +54,14 @@ Or use Gradle directly:
 syncflow/
 ├── syncflow-api/          # REST API, GraphQL, controllers, JPA entities
 ├── syncflow-core/         # Domain model, SPI interfaces, validation
-├── syncflow-common/       # Shared utilities, exceptions, tenant IDs
+├── syncflow-common/       # Shared utilities, exceptions, correlation IDs
 ├── syncflow-connectors/   # Database connector implementations (JDBC, MongoDB, Redis)
 ├── syncflow-plugin-api/   # Plugin SDK for third-party connectors
 ├── syncflow-agent/        # Data plane agent for customer VPCs
 ├── syncflow-security/     # Security configuration (RBAC utilities)
 ├── syncflow-monitoring/   # Metrics and observability utilities
+├── syncflow-orchestrator/ # Workflow orchestration (future)
+├── syncflow-test/         # Integration test suite
 ├── syncflow-ui/           # React 19 + Mantine 7 admin portal
 ├── docker/                # Docker Compose + Dockerfiles
 ├── helm/                  # Helm charts

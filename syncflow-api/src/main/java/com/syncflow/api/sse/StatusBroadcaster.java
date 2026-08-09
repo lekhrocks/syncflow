@@ -22,7 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class StatusBroadcaster {
 
     private static final Logger log = LoggerFactory.getLogger(StatusBroadcaster.class);
-    private static final long DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 min server timeout
+    private static final long DEFAULT_TIMEOUT_MS = 0; // no server timeout; client-driven
 
     private final ObjectMapper objectMapper;
     private final Map<String, List<SseEmitter>> subscribers = new ConcurrentHashMap<>();
@@ -86,23 +86,5 @@ public class StatusBroadcaster {
             emitter.complete();
         } catch (Exception ignored) {
         }
-    }
-
-    /**
-     * Periodic sweep that drops emitters whose connection is already complete
-     * (client closed, timeout, or error). Prevents dead emitters from
-     * accumulating in the subscriber map when an emit error path is missed.
-     */
-    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 30_000)
-    public void sweep() {
-        subscribers.forEach((jobId, list) ->
-                list.removeIf(e -> {
-                    try {
-                        e.send(SseEmitter.event().name("ping").comment("keepalive"));
-                        return false;
-                    } catch (Exception ex) {
-                        return true; // dead connection — drop
-                    }
-                }));
     }
 }

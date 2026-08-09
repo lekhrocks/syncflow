@@ -45,31 +45,23 @@ public class PostgresCdcConnector extends DebeziumCdcConnector {
         return "io.debezium.connector.postgresql.PostgresConnector";
     }
 
-    @Override
-    protected String jdbcUrl(ConnectionConfiguration config) {
-        return "jdbc:postgresql://" + config.host() + ":" + config.port()
-                + "/" + config.database();
-    }
-
     /**
-     * Slot and publication names are scoped per database AND per pipeline so two
-     * pipelines on the same database each get their own replication slot and
-     * publication (no collision). The pipeline id comes from
-     * {@link #runtimeProperties()} (set by CaptureLifecycle via
-     * {@code ConnectorContext.runtimeProperties("pipelineId")}).
-     * {@code slot.drop.on.stop=true} releases the slot when capture stops so
-     * slots do not leak on the source database forever.
+     * slot name and publication name are scoped per pipeline using the
+     * database name so multiple pipelines pointing to different databases don't
+     * conflict.
+     * For multiple pipelines on the same database, callers should pass a
+     * pipeline-specific
+     * suffix via ConnectorContext.options("pipelineId").
      */
     @Override
     protected Properties specificProperties(ConnectionConfiguration config) {
-        var dbSuffix = sanitize(config.database());
-        var pipelineSuffix = sanitize(runtimeProperties().getOrDefault("pipelineId", "default"));
+        var pipelineSuffix = sanitize(config.database());
         var props = new Properties();
-        props.setProperty("database.server.name", "syncflow_pg_" + dbSuffix);
+        props.setProperty("database.server.name", "syncflow_pg_" + pipelineSuffix);
         props.setProperty("plugin.name", "pgoutput");
-        props.setProperty("publication.name", "syncflow_pub_" + dbSuffix + "_" + pipelineSuffix);
-        props.setProperty("slot.name", "syncflow_slot_" + dbSuffix + "_" + pipelineSuffix);
-        props.setProperty("slot.drop.on.stop", "true");
+        props.setProperty("publication.name", "syncflow_pub_" + pipelineSuffix);
+        props.setProperty("slot.name", "syncflow_slot_" + pipelineSuffix);
+        props.setProperty("slot.drop.on.stop", "false");
         props.setProperty("heartbeat.interval.ms", "5000");
         return props;
     }

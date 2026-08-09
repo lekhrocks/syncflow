@@ -2,7 +2,10 @@ package com.syncflow.api.sync;
 
 import com.syncflow.api.cdc.CaptureLifecycle;
 import com.syncflow.api.pipeline.PipelineDesignerService;
+import com.syncflow.api.runtimestate.RuntimeStateJson;
 import com.syncflow.api.sse.StatusBroadcaster;
+import com.syncflow.api.sync.entity.SyncJobEntity;
+import com.syncflow.api.sync.repository.SyncJobRepository;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.cdc.CaptureStatus;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
@@ -19,12 +22,15 @@ import com.syncflow.tenant.TenantId;
 import com.syncflow.tenant.TenantSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -44,14 +50,16 @@ public class SyncOrchestrator {
     private final EventIdempotencyStore idempotencyStore;
     private final RetryEngine retryEngine;
     private final DeadLetterQueue dlq;
+    private final SyncJobRepository jobRepository;
+    private final RuntimeStateJson json;
     private final MeterRegistry meterRegistry;
     private final StatusBroadcaster broadcaster;
 
-    private final Map<String, SyncJob> jobs = new ConcurrentHashMap<>();
+    // Transient in-memory state: event queues, worker threads, running flags.
+    // The SyncJob itself (state + statistics) is durable in sync_jobs.
     private final Map<String, BlockingQueue<CDCEvent>> eventQueues = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> runningFlags = new ConcurrentHashMap<>();
     private final Map<String, Thread> workerThreads = new ConcurrentHashMap<>();
-    private final AtomicLong processed = new AtomicLong(0);
 
     public SyncOrchestrator(CaptureLifecycle captureLifecycle,
             PipelineDesignerService pipelineService,
@@ -59,6 +67,8 @@ public class SyncOrchestrator {
             EventIdempotencyStore idempotencyStore,
             RetryEngine retryEngine,
             DeadLetterQueue dlq,
+            SyncJobRepository jobRepository,
+            RuntimeStateJson json,
             MeterRegistry meterRegistry,
             StatusBroadcaster broadcaster) {
         this.captureLifecycle = captureLifecycle;
@@ -67,21 +77,10 @@ public class SyncOrchestrator {
         this.idempotencyStore = idempotencyStore;
         this.retryEngine = retryEngine;
         this.dlq = dlq;
+        this.jobRepository = jobRepository;
+        this.json = json;
         this.meterRegistry = meterRegistry;
         this.broadcaster = broadcaster;
-        // Wire retry re-enqueue back into this orchestrator's event queue so a
-        // transient failure actually re-delivers after backoff instead of only
-        // being counted. The retry scheduler thread does not carry the request
-        // ThreadLocal, so the callback re-establishes the tenant captured at
-        // evaluate() time before re-submitting.
-        retryEngine.setReenqueue((tenantId, pipelineId, event) -> {
-            TenantContextHolder.set(TenantSupport.workerContext(TenantId.from(tenantId)));
-            try {
-                submitEvent(pipelineId, event);
-            } finally {
-                TenantContextHolder.clear();
-            }
-        });
     }
 
     /** Tenant-scoped map key so runtime state cannot collide across tenants. */
@@ -94,12 +93,12 @@ public class SyncOrchestrator {
         return key(TenantContextHolder.getTenantId().value(), pipelineId);
     }
 
+    @Transactional
     public SyncJob start(String pipelineId) {
         // Capture the tenant at request time so the background worker scopes its
         // DB work correctly (ThreadLocal does not cross virtual-thread boundaries).
         var tenantId = TenantContextHolder.getTenantId();
-        var key = key(tenantId.value(), pipelineId);
-        var existing = jobs.get(key);
+        var existing = findByPipeline(pipelineId);
         if (existing != null && existing.getState() == SyncState.RUNNING)
             return existing;
 
@@ -110,7 +109,8 @@ public class SyncOrchestrator {
         }
 
         var job = new SyncJob(pipelineId).withRunning();
-        jobs.put(key, job);
+        persist(job);
+        var key = key(tenantId.value(), pipelineId);
         runningFlags.put(key, new AtomicBoolean(true));
         var queue = new LinkedBlockingQueue<CDCEvent>(QUEUE_CAPACITY);
         eventQueues.put(key, queue);
@@ -127,23 +127,23 @@ public class SyncOrchestrator {
         return job;
     }
 
+    @Transactional
     public void stop(String pipelineId) {
         var key = tenantKey(pipelineId);
         var flag = runningFlags.get(key);
         if (flag != null)
             flag.set(false);
-        var job = jobs.get(key);
-        if (job != null) {
-            jobs.put(key, job.withStopped());
-            emit(job);
-        }
-        // Flush any buffered destination rows and release the connection.
-        router.closePipeline(pipelineId);
+        Optional.ofNullable(findByPipeline(pipelineId))
+                .map(SyncJob::withStopped)
+                .ifPresent(job -> {
+                    persist(job);
+                    emit(job);
+                });
     }
 
+    @Transactional(readOnly = true)
     public SyncJob get(String pipelineId) {
-        var key = tenantKey(pipelineId);
-        var job = jobs.get(key);
+        var job = findByPipeline(pipelineId);
         if (job == null)
             throw new NoSuchElementException("No sync job for pipeline: " + pipelineId);
         return job;
@@ -162,21 +162,22 @@ public class SyncOrchestrator {
                         "statistics", job.getStatistics()));
     }
 
+    @Transactional(readOnly = true)
     public SyncState status(String pipelineId) {
-        var job = jobs.get(tenantKey(pipelineId));
+        var job = findByPipeline(pipelineId);
         return job != null ? job.getState() : SyncState.STOPPED;
     }
 
+    @Transactional(readOnly = true)
     public List<SyncJob> list() {
-        var tenant = TenantContextHolder.getTenantId().value();
-        return jobs.entrySet().stream()
-                .filter(e -> e.getKey().startsWith(tenant + ":"))
-                .map(Map.Entry::getValue)
+        return jobRepository.findByTenantIdOrderByCreatedAtDesc(TenantContextHolder.getTenantId().value()).stream()
+                .map(this::toDomain)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public SyncStatistics statistics(String pipelineId) {
-        var job = jobs.get(tenantKey(pipelineId));
+        var job = findByPipeline(pipelineId);
         return job != null ? job.getStatistics() : new SyncStatistics(0, 0, 0, 0, 0, 0, 0);
     }
 
@@ -233,11 +234,12 @@ public class SyncOrchestrator {
                         "pipeline", pipelineId).increment(eventsThisBatch.size());
 
                 var stats = statsBuilder.build();
-                var job = jobs.get(mapKey);
-                if (job != null) {
-                    jobs.put(mapKey, job.withStatistics(stats));
-                    emit(job);
-                }
+                Optional.ofNullable(findByPipeline(pipelineId))
+                        .map(job -> job.withStatistics(stats))
+                        .ifPresent(job -> {
+                            persist(job);
+                            emit(job);
+                        });
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -248,13 +250,12 @@ public class SyncOrchestrator {
             }
         }
 
-        var finalJob = jobs.get(mapKey);
-        if (finalJob != null) {
-            jobs.put(mapKey, finalJob.withCompleted());
-            emit(finalJob);
-        }
-        // Flush any remaining buffered rows for the pipeline.
-        router.closePipeline(pipelineId);
+        Optional.ofNullable(findByPipeline(pipelineId))
+                .map(SyncJob::withCompleted)
+                .ifPresent(job -> {
+                    persist(job);
+                    emit(job);
+                });
     }
 
     private void processEvent(String pipelineId, CDCEvent event,
@@ -291,7 +292,7 @@ public class SyncOrchestrator {
                     .map(ColumnMapping::destinationColumn)
                     .toList();
 
-            var result = router.write(pipelineId, event, destColumns);
+            var result = router.write(destConnectionId, event, destColumns);
 
             if (result.success()) {
                 idempotencyStore.markProcessed(eventId);
@@ -310,6 +311,35 @@ public class SyncOrchestrator {
             retryEngine.evaluate(pipelineId, event, reason);
             stats.failedEvents.incrementAndGet();
         }
+    }
+
+    private SyncJob findByPipeline(String pipelineId) {
+        return jobRepository.findByTenantIdAndPipelineId(
+                TenantContextHolder.getTenantId().value(), pipelineId)
+                .map(this::toDomain)
+                .orElse(null);
+    }
+
+    @Transactional
+    private void persist(SyncJob job) {
+        var entity = jobRepository.findByTenantIdAndPipelineId(
+                TenantContextHolder.getTenantId().value(), job.getPipelineId())
+                .orElseGet(SyncJobEntity::new);
+        entity.setId(job.getId());
+        entity.setTenantId(TenantContextHolder.getTenantId().value());
+        entity.setPipelineId(job.getPipelineId());
+        entity.setState(job.getState().name());
+        entity.setStatistics(json.toJson(job.getStatistics()));
+        entity.setCreatedAt(job.getCreatedAt());
+        entity.setUpdatedAt(Instant.now());
+        jobRepository.save(entity);
+    }
+
+    private SyncJob toDomain(SyncJobEntity e) {
+        return SyncJob.restore(e.getId(), e.getPipelineId(),
+                SyncState.valueOf(e.getState()),
+                json.fromJson(e.getStatistics(), SyncStatistics.class),
+                e.getCreatedAt());
     }
 
     private static class SyncStatisticsBuilder {

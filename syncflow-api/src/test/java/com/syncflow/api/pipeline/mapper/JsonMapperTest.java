@@ -3,6 +3,9 @@ package com.syncflow.api.pipeline.mapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.syncflow.core.model.ConnectionConfiguration;
+import com.syncflow.core.model.ConnectorType;
+import com.syncflow.core.model.TransformationConfiguration;
 import com.syncflow.core.pipeline.DestinationReference;
 import com.syncflow.core.pipeline.PipelineSettings;
 import com.syncflow.core.pipeline.SourceReference;
@@ -18,6 +21,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @DisplayName("JsonMapper")
@@ -130,6 +134,50 @@ class JsonMapperTest {
             assertEquals(1, result.size());
             assertEquals("users", result.get(0).sourceTable());
             assertEquals("users_copy", result.get(0).destinationTable());
+        }
+    }
+
+    @Nested
+    @DisplayName("ConnectionConfiguration round-trip")
+    class ConnectionConfigurationRoundTrip {
+
+        @Test
+        void serializesAndDeserializesCorrectly() {
+            var config = new ConnectionConfiguration(ConnectorType.POSTGRESQL, "localhost", 5432,
+                    "syncflow", "admin", "secret", Map.of("ssl", "true"));
+            var json = mapper.fromConnectionConfiguration(config);
+            var result = mapper.toConnectionConfiguration(json);
+            assertEquals(config.connectorType(), result.connectorType());
+            assertEquals(config.host(), result.host());
+            assertEquals(config.port(), result.port());
+            assertEquals(config.database(), result.database());
+            assertEquals("true", result.properties().get("ssl"));
+        }
+    }
+
+    @Nested
+    @DisplayName("TransformationConfiguration round-trip")
+    class TransformationConfigurationRoundTrip {
+
+        @Test
+        void serializesAndDeserializesCorrectly() {
+            var config = new TransformationConfiguration(
+                    List.of("users", "orders"),
+                    List.of("audit_log"),
+                    Map.of("src_col", "dest_col"),
+                    Map.of("full_name", "CONCAT(first, last)"));
+            var json = mapper.fromTransformationConfiguration(config);
+            var result = mapper.toTransformationConfiguration(json);
+            assertEquals(config.includedTables(), result.includedTables());
+            assertEquals(config.excludedTables(), result.excludedTables());
+            assertEquals("dest_col", result.columnMappings().get("src_col"));
+        }
+
+        @Test
+        void nullTransformationConfigurationReturnsNull() {
+            var json = mapper.fromTransformationConfiguration(null);
+            assertNull(json);
+            assertNull(mapper.toTransformationConfiguration(null));
         }
     }
 

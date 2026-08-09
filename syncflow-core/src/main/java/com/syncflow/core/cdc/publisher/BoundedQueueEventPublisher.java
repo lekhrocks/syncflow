@@ -12,14 +12,12 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Bounded, thread-safe event publisher backed by an {@link ArrayBlockingQueue}.
+ * Replaces {@link InMemoryEventPublisher} which grows without bound and risks
+ * OOM.
  * <p>
- * When the queue is full, {@link #publish(CDCEvent)} BLOCKS (via {@code put})
- * instead of dropping events. This applies backpressure to the CDC producer
- * (Debezium engine) so the sink can catch up — the alternative (drop-oldest)
- * silently loses change events under load, which is unacceptable for a CDC
- * platform. Data loss is never silent.
- * <p>
- * Consumers drain via {@link #drain(int)} (non-blocking, up to maxEvents).
+ * When the queue is full, the oldest event is dropped and a warning is logged
+ * so
+ * data-loss is always visible (never silent).
  */
 public class BoundedQueueEventPublisher implements EventPublisher {
 
@@ -44,17 +42,17 @@ public class BoundedQueueEventPublisher implements EventPublisher {
 
     @Override
     public void publish(CDCEvent event) {
-        // Blocking put: backpressure the producer when the sink is slow. Never
-        // drop — a dropped change event is silent data loss.
-        try {
-            queue.put(event);
-            totalPublished.incrementAndGet();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("CDC publish interrupted (queue full); event id={} dropped",
-                    event.header().eventId());
+        if (!queue.offer(event)) {
+            // Queue full: drop oldest, enqueue newest so we always have the latest state
+            var dropped = queue.poll();
+            queue.offer(event);
             totalDropped.incrementAndGet();
+            log.warn("CDC event queue full (capacity={}), dropped event id={} operation={}",
+                    queue.remainingCapacity() + queue.size(),
+                    dropped != null ? dropped.header().eventId() : "unknown",
+                    dropped != null ? dropped.operation() : "unknown");
         }
+        totalPublished.incrementAndGet();
     }
 
     @Override

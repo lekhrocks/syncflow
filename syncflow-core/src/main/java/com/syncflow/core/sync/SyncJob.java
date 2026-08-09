@@ -36,6 +36,15 @@ public class SyncJob {
         this.createdAt = createdAt;
     }
 
+    /**
+     * Rebuild a job from persisted state; the processed-events buffer is not
+     * persisted.
+     */
+    public static SyncJob restore(String id, String pipelineId, SyncState state,
+            SyncStatistics stats, Instant createdAt) {
+        return new SyncJob(id, pipelineId, state, stats, List.of(), createdAt);
+    }
+
     public SyncJob withRunning() {
         return new SyncJob(id, pipelineId, SyncState.RUNNING, statistics, processed, createdAt);
     }

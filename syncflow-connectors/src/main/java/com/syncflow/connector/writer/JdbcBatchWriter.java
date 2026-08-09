@@ -15,7 +15,7 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
 
     private Connection connection;
     private String currentTable;
-    private List<String> currentColumns;
+    private String currentInsertSql;
     private final List<Map<String, Object>> buffer = new ArrayList<>();
 
     protected abstract String jdbcUrl(ConnectionConfiguration config);
@@ -26,9 +26,6 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
         try {
             connection = DriverManager.getConnection(jdbcUrl(config), jdbcProperties(config));
             connection.setAutoCommit(false);
-            currentTable = null;
-            currentColumns = null;
-            buffer.clear();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to connect writer", e);
         }
@@ -38,15 +35,6 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
     public void writeBatch(String table, List<Map<String, Object>> rows, List<String> columns) {
         if (rows.isEmpty())
             return;
-        // If the target table (or column set) changes, flush what we have first so
-        // each batch INSERT targets exactly one table with one column list.
-        if (currentTable != null && (!currentTable.equals(table) || !currentColumns.equals(columns))) {
-            flush();
-        }
-        if (currentTable == null) {
-            currentTable = table;
-            currentColumns = List.copyOf(columns);
-        }
         buffer.addAll(rows);
         if (buffer.size() >= 1000) {
             flush();
@@ -58,11 +46,12 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
         if (buffer.isEmpty() || connection == null)
             return;
         try {
-            var sql = buildInsertSql(currentColumns);
+            var columns = new ArrayList<>(buffer.getFirst().keySet());
+            var sql = buildInsertSql(columns);
             try (var stmt = connection.prepareStatement(sql)) {
                 for (var row : buffer) {
-                    for (int i = 0; i < currentColumns.size(); i++) {
-                        stmt.setObject(i + 1, row.get(currentColumns.get(i)));
+                    for (int i = 0; i < columns.size(); i++) {
+                        stmt.setObject(i + 1, row.get(columns.get(i)));
                     }
                     stmt.addBatch();
                 }
@@ -114,7 +103,7 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
 
     private String buildInsertSql(List<String> columns) {
         var cols = String.join(", ", columns);
-        var params = columns.isEmpty() ? "" : "?" + ", ?".repeat(columns.size() - 1);
+        var params = "?" + ", ?".repeat(columns.size() - 1);
         return "INSERT INTO " + currentTable + " (" + cols + ") VALUES (" + params + ")";
     }
 }

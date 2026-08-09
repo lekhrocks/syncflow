@@ -45,16 +45,6 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
     private volatile ConnectorContext currentContext;
     private volatile Consumer<CDCEvent> currentConsumer;
 
-    /**
-     * Runtime properties of the active capture (e.g. {@code pipelineId}) made
-     * available to subclasses that need per-pipeline scoping (replication slots,
-     * publications, offset files). Never null.
-     */
-    protected Map<String, String> runtimeProperties() {
-        var ctx = currentContext;
-        return ctx == null ? Map.of() : ctx.runtimeProperties();
-    }
-
     private final Map<String, String> lastOffset = new ConcurrentHashMap<>();
 
     protected abstract ConnectorType connectorType();
@@ -64,15 +54,6 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
     protected abstract Properties specificProperties(ConnectionConfiguration config);
 
     protected abstract CDCEvent buildEvent(ChangeEvent<String, String> event, ConnectorContext ctx);
-
-    /**
-     * JDBC URL for the source database, used by the durable offset store. Must
-     * be overridden by subclasses that support persistent offsets.
-     */
-    protected String jdbcUrl(ConnectionConfiguration config) {
-        throw new UnsupportedOperationException(
-                connectorType() + " does not support a JDBC offset store");
-    }
 
     // ── Offset management ────────────────────────────────────────────────────
 
@@ -191,16 +172,12 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
         debeziumProps.setProperty("name", "syncflow-" + connectorType().name().toLowerCase());
         debeziumProps.setProperty("connector.class", connectorClassName());
 
-        // Durable offset store: Postgres-backed (survives pod restarts/reschedules).
-        // Plain JDBC — no JPA — so the connector module stays Spring-Data-free.
-        // The table is created by Flyway migration V13 (debezium_offsets).
+        // use FileOffsetBackingStore so offsets survive JVM restarts
+        // each pipeline gets its own offset file keyed by pipeline id from context
+        var offsetFile = resolveOffsetFilePath(context);
         debeziumProps.setProperty("offset.storage",
-                "com.syncflow.connector.cdc.JdbcOffsetBackingStore");
-        debeziumProps.setProperty("offset.storage.jdbc.url",
-                jdbcUrl(config));
-        debeziumProps.setProperty("offset.storage.jdbc.user", config.username());
-        debeziumProps.setProperty("offset.storage.jdbc.password", config.password());
-        debeziumProps.setProperty("offset.storage.jdbc.table.name", "debezium_offsets");
+                "org.apache.kafka.connect.storage.FileOffsetBackingStore");
+        debeziumProps.setProperty("offset.storage.file.filename", offsetFile);
         debeziumProps.setProperty("offset.flush.interval.ms", "5000");
 
         debeziumProps.setProperty("topic.prefix", "syncflow");
@@ -317,4 +294,20 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
         }
     }
 
+    /**
+     * Resolve a stable per-pipeline offset file path.
+     * Keyed by connector + host + database + PIPELINE id so multiple pipelines on
+     * the same database get their own offset file (shared files corrupt resume).
+     */
+    private String resolveOffsetFilePath(ConnectorContext context) {
+        var config = context.config();
+        var dir = System.getProperty("java.io.tmpdir");
+        var pipelineKey = context.runtimeProperties().getOrDefault("pipelineId", "default");
+        var safePipeline = pipelineKey.replaceAll("[^a-zA-Z0-9_-]", "_");
+        var key = connectorType().name().toLowerCase()
+                + "_" + config.host().replace(".", "_")
+                + "_" + config.database()
+                + "_" + safePipeline;
+        return dir + "/syncflow_offset_" + key + ".dat";
+    }
 }

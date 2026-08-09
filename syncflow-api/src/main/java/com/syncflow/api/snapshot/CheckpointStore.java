@@ -1,33 +1,67 @@
 package com.syncflow.api.snapshot;
 
+import com.syncflow.api.snapshot.entity.SnapshotCheckpointEntity;
+import com.syncflow.api.snapshot.repository.SnapshotCheckpointRepository;
 import com.syncflow.core.snapshot.SnapshotCheckpoint;
+import com.syncflow.tenant.TenantSupport;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
+/**
+ * Resume checkpoints persisted to PostgreSQL; one row per
+ * tenant+pipeline+table.
+ */
 @Component
 public class CheckpointStore {
 
-    private final Map<String, SnapshotCheckpoint> store = new ConcurrentHashMap<>();
+    private final SnapshotCheckpointRepository repository;
 
+    public CheckpointStore(SnapshotCheckpointRepository repository) {
+        this.repository = repository;
+    }
+
+    @Transactional
     public void save(SnapshotCheckpoint checkpoint) {
-        store.put(key(checkpoint.pipelineId(), checkpoint.sourceTable()), checkpoint);
+        var entity = repository
+                .findByTenantIdAndPipelineIdAndSourceTable(
+                        tenantId(), checkpoint.pipelineId(), checkpoint.sourceTable())
+                .orElseGet(SnapshotCheckpointEntity::new);
+        entity.setTenantId(tenantId());
+        entity.setPipelineId(checkpoint.pipelineId());
+        entity.setSourceTable(checkpoint.sourceTable());
+        entity.setLastBatchNumber(checkpoint.lastBatchNumber());
+        entity.setRowsProcessed(checkpoint.rowsProcessed());
+        entity.setCursorPos(checkpoint.cursor());
+        entity.setUpdatedAt(java.time.Instant.now());
+        repository.save(entity);
     }
 
+    @Transactional(readOnly = true)
     public SnapshotCheckpoint get(String pipelineId, String sourceTable) {
-        return store.get(key(pipelineId, sourceTable));
+        return repository
+                .findByTenantIdAndPipelineIdAndSourceTable(tenantId(), pipelineId, sourceTable)
+                .map(this::toDomain)
+                .orElse(null);
     }
 
+    @Transactional
     public void delete(String pipelineId, String sourceTable) {
-        store.remove(key(pipelineId, sourceTable));
+        repository
+                .findByTenantIdAndPipelineIdAndSourceTable(tenantId(), pipelineId, sourceTable)
+                .ifPresent(repository::delete);
     }
 
+    @Transactional
     public void deleteAll(String pipelineId) {
-        store.keySet().removeIf(k -> k.startsWith(pipelineId + ":"));
+        repository.deleteAllForPipeline(tenantId(), pipelineId);
     }
 
-    private static String key(String pid, String table) {
-        return pid + ":" + table;
+    private SnapshotCheckpoint toDomain(SnapshotCheckpointEntity e) {
+        return new SnapshotCheckpoint(e.getPipelineId(), e.getSourceTable(),
+                e.getLastBatchNumber(), e.getRowsProcessed(), e.getCursorPos());
+    }
+
+    private String tenantId() {
+        return TenantSupport.tenantId();
     }
 }

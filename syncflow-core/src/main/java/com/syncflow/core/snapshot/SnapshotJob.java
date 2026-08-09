@@ -46,6 +46,15 @@ public class SnapshotJob {
         this.createdAt = createdAt;
     }
 
+    /** Rebuild a persisted job. */
+    public static SnapshotJob restore(SnapshotId id, String pipelineId, SnapshotStatus status,
+            SnapshotStatistics statistics, SnapshotProgress progress,
+            List<SnapshotError> errors, Instant createdAt) {
+        return new SnapshotJob(id, pipelineId, status, statistics,
+                progress != null ? progress : SnapshotProgress.starting(0),
+                errors != null ? List.copyOf(errors) : List.of(), createdAt);
+    }
+
     public SnapshotJob withRunning() {
         return new SnapshotJob(id, pipelineId, SnapshotStatus.RUNNING, statistics, progress, errors, createdAt);
     }
