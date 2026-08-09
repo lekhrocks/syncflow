@@ -124,6 +124,8 @@ public class SyncOrchestrator {
             jobs.put(key, job.withStopped());
             emit(job);
         }
+        // Flush any buffered destination rows and release the connection.
+        router.closePipeline(pipelineId);
     }
 
     public SyncJob get(String pipelineId) {
@@ -238,6 +240,8 @@ public class SyncOrchestrator {
             jobs.put(mapKey, finalJob.withCompleted());
             emit(finalJob);
         }
+        // Flush any remaining buffered rows for the pipeline.
+        router.closePipeline(pipelineId);
     }
 
     private void processEvent(String pipelineId, CDCEvent event,
@@ -274,7 +278,7 @@ public class SyncOrchestrator {
                     .map(ColumnMapping::destinationColumn)
                     .toList();
 
-            var result = router.write(destConnectionId, event, destColumns);
+            var result = router.write(pipelineId, event, destColumns);
 
             if (result.success()) {
                 idempotencyStore.markProcessed(eventId);

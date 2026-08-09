@@ -67,34 +67,46 @@ class BoundedQueueEventPublisherTest {
         }
 
         @Test
-        void dropsOldestWhenQueueFull() {
-            // Fill queue
+        void blocksWhenQueueFullThenProceedsAfterDrain() throws InterruptedException {
+            // Fill the queue.
             for (int i = 0; i < 10; i++) {
                 publisher.publish(event("e" + i));
             }
-            // One more should cause a drop
-            publisher.publish(event("e10"));
-            assertEquals(1, publisher.totalDropped());
-            assertEquals(10, publisher.count()); // still 10, oldest dropped
+            // A further publish from another thread must block (backpressure), not drop.
+            var blocked = new java.util.concurrent.atomic.AtomicBoolean(false);
+            var published = new java.util.concurrent.atomic.AtomicBoolean(false);
+            var producer = new Thread(() -> {
+                blocked.set(true);
+                publisher.publish(event("e10"));
+                published.set(true);
+            });
+            producer.start();
+            // Give the producer a moment to reach the blocking put.
+            Thread.sleep(100);
+            assertTrue(blocked.get(), "producer thread should be running");
+            assertTrue(producer.isAlive(), "publish should block while the queue is full");
+
+            // Drain frees capacity; the blocked publish then completes.
+            var drained = publisher.drain(5);
+            assertEquals(5, drained.size());
+            producer.join(2000);
+            assertTrue(published.get(), "blocked publish should complete after drain");
+            // No event was dropped.
+            assertEquals(0, publisher.totalDropped());
         }
 
         @Test
-        void totalPublishedIncludesDropped() {
-            for (int i = 0; i < 12; i++) {
-                publisher.publish(event("e" + i));
-            }
-            assertEquals(12, publisher.totalPublished());
-            assertEquals(2, publisher.totalDropped());
-        }
-
-        @Test
-        void latestEventPreservedAfterDrop() {
+        void noEventIsEverDroppedWhenQueueFull() throws InterruptedException {
             for (int i = 0; i < 10; i++) {
                 publisher.publish(event("e" + i));
             }
-            publisher.publish(event("latest"));
-            var events = publisher.peek();
-            assertTrue(events.stream().anyMatch(e -> "latest".equals(e.header().eventId())));
+            var producer = new Thread(() -> publisher.publish(event("e10")));
+            producer.start();
+            Thread.sleep(50);
+            producer.join(2000);
+            // The 11th event eventually lands in the queue once capacity frees up,
+            // or is still being blocked — never dropped silently.
+            assertEquals(0, publisher.totalDropped());
         }
     }
 

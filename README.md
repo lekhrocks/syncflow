@@ -11,13 +11,13 @@ SyncFlow is a production-grade, connector-based Change Data Capture (CDC) platfo
 ├─────────────────────────────────────────────────────┤
 │  syncflow-security      │  syncflow-monitoring      │
 ├─────────────────────────────────────────────────────┤
-│  syncflow-orchestrator  │  syncflow-core            │
-│                         │  (SPI, Model, Registry)   │
+│  syncflow-core            │
+│  (SPI, Model, Registry)   │
 ├─────────────────────────────────────────────────────┤
 │               syncflow-connectors                   │
 │  PostgreSQL  │  MySQL   │  MongoDB  │  Kafka        │
 ├─────────────────────────────────────────────────────┤
-│  syncflow-common  (Exceptions, Correlation IDs)     │
+│  syncflow-common  (Exceptions, Tenant IDs)          │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -25,22 +25,20 @@ SyncFlow is a production-grade, connector-based Change Data Capture (CDC) platfo
 
 | Module | Responsibility |
 |--------|---------------|
-| `syncflow-common` | Shared utilities: exceptions, correlation IDs, base config |
-| `syncflow-core` | Domain model, Connector SPI, registry, pipeline repository/service |
-| `syncflow-api` | REST controllers, GraphQL resolver, global error handling, Flyway migrations |
+| `syncflow-common` | Shared utilities: exceptions, tenant IDs, correlation |
+| `syncflow-core` | Domain model, Connector SPI, registry |
+| `syncflow-api` | REST controllers, JPA persistence, Flyway migrations, orchestrators |
 | `syncflow-connectors` | Connector SPI implementations (one class per database type) |
-| `syncflow-orchestrator` | Pipeline lifecycle orchestration (future: CDC runtime) |
-| `syncflow-security` | Spring Security configuration |
-| `syncflow-monitoring` | Micrometer metrics, OpenTelemetry integration |
-| `syncflow-test` | Integration test suite with Testcontainers |
+| `syncflow-agent` | Data-plane agent (registration + heartbeat client) |
+| `syncflow-plugin-api` | Third-party connector SDK (published artifact) |
 
 ### Key Decisions
 
 - **Hexagonal + Clean Architecture**: Core domain (`syncflow-core`) has zero dependencies on web framework or database drivers.
 - **Connector SPI**: `Connector` interface with `connect()`, `disconnect()`, `validate()`, `discoverSchemas()`, `discoverTables()`, `health()`, `metadata()`. Add a new database by implementing one class.
 - **Spring auto-discovery**: Connectors are `@Component` classes automatically discovered by `SpringConnectorRegistry` on startup.
-- **In-memory repository first**: `InMemoryPipelineRepository` for iteration; swap to JPA-backed repository when persistence needs stabilize.
-- **CQRS-ready**: Write operations go through `PipelineService`; reads through repository. Event log in `PipelineEvent`.
+- **Persistent state**: Connections, pipeline designs, DLQ, idempotency, and CDC offsets persist in PostgreSQL via JPA + Flyway. Runtime job state is persisted so replicas stay consistent.
+- **Pipeline designer**: Pipeline definitions (designs + version history) are the live model via `PipelineDesignerService` / `PipelineDesignEntity`.
 
 ## Getting Started
 
