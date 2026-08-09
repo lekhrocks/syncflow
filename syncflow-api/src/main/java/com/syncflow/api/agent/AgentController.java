@@ -1,6 +1,8 @@
 package com.syncflow.api.agent;
 
 import com.syncflow.agent.domain.Agent;
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.agent.domain.AgentId;
 import com.syncflow.agent.domain.HardwareMetrics;
 import org.springframework.http.ResponseEntity;
@@ -19,9 +21,11 @@ import java.util.Map;
 public class AgentController {
 
     private final FleetManager fleetManager;
+    private final AuthorizationService authz;
 
-    public AgentController(FleetManager fleetManager) {
+    public AgentController(FleetManager fleetManager, AuthorizationService authz) {
         this.fleetManager = fleetManager;
+        this.authz = authz;
     }
 
     @PostMapping("/register")
@@ -57,11 +61,13 @@ public class AgentController {
 
     @GetMapping
     public ResponseEntity<List<Agent>> list() {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(fleetManager.list());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Agent> get(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return fleetManager.get(new AgentId(id))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -69,17 +75,20 @@ public class AgentController {
 
     @PostMapping("/{id}/drain")
     public ResponseEntity<Map<String, Object>> drain(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         fleetManager.drain(new AgentId(id));
         return ResponseEntity.ok(Map.of("agentId", id, "status", "DRAINING"));
     }
 
     @PostMapping("/{id}/restart")
     public ResponseEntity<Map<String, Object>> restart(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         return ResponseEntity.ok(Map.of("agentId", id, "action", "restart_requested"));
     }
 
     @GetMapping("/{id}/metrics")
     public ResponseEntity<Map<String, Object>> metrics(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         return fleetManager.get(new AgentId(id))
                 .map(a -> ResponseEntity.<Map<String, Object>>ok(Map.of(
                         "agentId", id,

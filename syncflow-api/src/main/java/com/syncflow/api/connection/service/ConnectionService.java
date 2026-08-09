@@ -4,6 +4,7 @@ import com.syncflow.api.connection.encryption.EncryptionService;
 import com.syncflow.api.connection.entity.ConnectionEntity;
 import com.syncflow.api.connection.mapper.ConnectionMapper;
 import com.syncflow.api.connection.repository.ConnectionRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncflow.common.exception.SyncFlowException;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.connection.ConnectionProperties;
@@ -21,13 +22,16 @@ public class ConnectionService {
     private final ConnectionRepository repository;
     private final ConnectionMapper mapper;
     private final EncryptionService encryption;
+    private final ObjectMapper objectMapper;
 
     public ConnectionService(ConnectionRepository repository,
             ConnectionMapper mapper,
-            EncryptionService encryption) {
+            EncryptionService encryption,
+            ObjectMapper objectMapper) {
         this.repository = repository;
         this.mapper = mapper;
         this.encryption = encryption;
+        this.objectMapper = objectMapper;
     }
 
     public Connection create(String name, ConnectionProperties props, Credentials credentials) {
@@ -105,8 +109,7 @@ public class ConnectionService {
         if (props.options() == null || props.options().isEmpty())
             return null;
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                    .writeValueAsString(props.options());
+            return objectMapper.writeValueAsString(props.options());
         } catch (Exception e) {
             return null;
         }

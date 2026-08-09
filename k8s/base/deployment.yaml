@@ -59,6 +59,11 @@ spec:
                 secretKeyRef:
                   name: syncflow-encryption
                   key: key
+            - name: SYNCFLOW_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: syncflow-jwt
+                  key: secret
           volumeMounts:
             - name: config
               mountPath: /app/config

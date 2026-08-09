@@ -1,6 +1,8 @@
 package com.syncflow.api.controller;
 
 import com.syncflow.api.metadata.MetadataDiscoveryService;
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.core.metadata.ColumnMetadata;
 import com.syncflow.core.metadata.ConstraintMetadata;
 import com.syncflow.core.metadata.IndexMetadata;
@@ -19,20 +21,24 @@ import org.springframework.web.bind.annotation.RestController;
 public class MetadataController {
 
     private final MetadataDiscoveryService discoveryService;
+    private final AuthorizationService authz;
 
-    public MetadataController(MetadataDiscoveryService discoveryService) {
+    public MetadataController(MetadataDiscoveryService discoveryService, AuthorizationService authz) {
         this.discoveryService = discoveryService;
+        this.authz = authz;
     }
 
     /** GET /api/connections/{id}/metadata — returns schemas */
     @GetMapping("/metadata")
     public ResponseEntity<MetadataResponse<SchemaMetadata>> getSchemas(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(discoveryService.discoverSchemas(id));
     }
 
     /** GET /api/connections/{id}/metadata/schemas */
     @GetMapping("/metadata/schemas")
     public ResponseEntity<MetadataResponse<SchemaMetadata>> getSchemasAlt(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(discoveryService.discoverSchemas(id));
     }
 
@@ -42,6 +48,7 @@ public class MetadataController {
     @GetMapping("/schemas/{schema}/tables")
     public ResponseEntity<MetadataResponse<TableMetadata>> getTables(
             @PathVariable String id, @PathVariable String schema) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(discoveryService.discoverTables(id, schema));
     }
 
@@ -49,6 +56,7 @@ public class MetadataController {
     @GetMapping("/metadata/schemas/{schema}/tables")
     public ResponseEntity<MetadataResponse<TableMetadata>> getTablesAlt(
             @PathVariable String id, @PathVariable String schema) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(discoveryService.discoverTables(id, schema));
     }
 
@@ -56,6 +64,7 @@ public class MetadataController {
     public ResponseEntity<MetadataResponse<TableMetadata>> getTable(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         var resp = discoveryService.discoverTables(id, schema);
         var filtered = resp.data().stream()
                 .filter(t -> t.name().equals(table))
@@ -69,6 +78,7 @@ public class MetadataController {
     public ResponseEntity<MetadataResponse<ColumnMetadata>> getColumns(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(discoveryService.discoverColumns(id, schema, table));
     }
 
@@ -76,6 +86,7 @@ public class MetadataController {
     public ResponseEntity<MetadataResponse<IndexMetadata>> getIndexes(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(discoveryService.discoverIndexes(id, schema, table));
     }
 
@@ -84,11 +95,13 @@ public class MetadataController {
     public ResponseEntity<MetadataResponse<ConstraintMetadata>> getConstraints(
             @PathVariable String id, @PathVariable String schema,
             @PathVariable String table) {
+        authz.require(ResourcePermission.CONNECTION_READ);
         return ResponseEntity.ok(discoveryService.discoverConstraints(id, schema, table));
     }
 
     @PostMapping({"/metadata/refresh", "/schemas/refresh"})
     public ResponseEntity<Void> refresh(@PathVariable String id) {
+        authz.require(ResourcePermission.CONNECTION_WRITE);
         discoveryService.refresh(id);
         return ResponseEntity.ok().build();
     }

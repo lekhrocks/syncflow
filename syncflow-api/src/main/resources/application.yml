@@ -86,11 +86,13 @@ syncflow:
     cache-ttl: 5m
     sample-size: 100
   encryption:
-    # 16-byte AES key, base64-encoded. Replace in production with a secure key.
-    key: MDEyMzQ1Njc4OWFiY2RlZg==
+    # Required. Base64-encoded AES key (16/24/32 bytes). No default — a missing
+    # or invalid key fails fast at startup via EncryptionService.
+    key: ${SYNCFLOW_ENCRYPTION_KEY:}
   jwt:
-    # Base64-encoded HMAC secret (HS256). Replace in production with a 32+ byte key.
-    secret: ${SYNCFLOW_JWT_SECRET:c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==}
+    # Required. Base64-encoded HMAC secret (>= 32 bytes). No default — a missing
+    # or invalid secret fails fast at startup via JwtSecurityConfig.
+    secret: ${SYNCFLOW_JWT_SECRET:}
     issuer: ${SYNCFLOW_JWT_ISSUER:syncflow}
     expiry-minutes: ${SYNCFLOW_JWT_EXPIRY_MINUTES:60}
   ai:

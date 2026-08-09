@@ -1,15 +1,19 @@
 package com.syncflow.api.config;
 
+import com.syncflow.api.security.AgentTokenFilter;
 import com.syncflow.security.SecurityConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 @Configuration
@@ -20,8 +24,10 @@ public class WebSecurityConfig {
     @Bean
     @ConditionalOnMissingBean(SecurityFilterChain.class)
     public SecurityFilterChain filterChain(HttpSecurity http,
-            JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+            Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter,
+            AgentTokenFilter agentTokenFilter) throws Exception {
         http
+                .addFilterBefore(agentTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .csrf(csrf -> csrf
                         // Hybrid CSRF: protect cookie-based paths; /api/** uses bearer
                         // tokens in headers (browsers cannot forge them), so it stays

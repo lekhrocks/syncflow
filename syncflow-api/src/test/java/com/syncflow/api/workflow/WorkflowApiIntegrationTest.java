@@ -34,6 +34,8 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("syncflow.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZg==");
+        registry.add("syncflow.jwt.secret",
+                () -> "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==");
     }
 
     // --- Sequential workflow ---
@@ -41,6 +43,7 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     void createAndStartSequentialWorkflow() {
         var wf = given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .contentType(ContentType.JSON)
                 .body(Map.of("pipelineId", "p-1"))
                 .when().post("/api/workflows")
@@ -55,6 +58,7 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
         assertEquals("p-1", wf.pipelineId());
 
         var started = given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .when().post("/api/workflows/{id}/start", wf.id().value())
                 .then()
                 .statusCode(200)
@@ -67,6 +71,7 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     void sequentialWorkflowStatusTransitions() {
         var wf = given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .contentType(ContentType.JSON)
                 .body(Map.of("pipelineId", "p-seq"))
                 .post("/api/workflows")
@@ -84,17 +89,20 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     void cancelWorkflow() {
         var wf = given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .contentType(ContentType.JSON)
                 .body(Map.of("pipelineId", "p-cancel"))
                 .post("/api/workflows")
                 .path("id");
 
         given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .when().post("/api/workflows/{id}/start", wf)
                 .then()
                 .statusCode(200);
 
         given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .when().post("/api/workflows/{id}/cancel", wf)
                 .then()
                 .statusCode(200)
@@ -117,6 +125,7 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     void getWorkflowGraph() {
         var wf = given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .contentType(ContentType.JSON)
                 .body(Map.of("pipelineId", "p-graph"))
                 .post("/api/workflows")
@@ -134,17 +143,20 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     void pauseAndResumeWorkflow() {
         var wf = given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .contentType(ContentType.JSON)
                 .body(Map.of("pipelineId", "p-pr"))
                 .post("/api/workflows")
                 .path("id");
 
         given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .when().post("/api/workflows/{id}/pause", wf)
                 .then()
                 .statusCode(200);
 
         given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .when().post("/api/workflows/{id}/resume", wf)
                 .then()
                 .statusCode(200);
@@ -163,6 +175,7 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     void cancelNonExistentWorkflow() {
         given()
+                .header("Authorization", "Bearer " + adminToken("default"))
                 .when().post("/api/workflows/nonexistent/cancel")
                 .then()
                 .statusCode(500);

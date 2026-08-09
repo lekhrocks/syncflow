@@ -1,5 +1,7 @@
 package com.syncflow.api.controller;
 
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.api.sync.DeadLetterQueue;
 import com.syncflow.api.sync.SyncOrchestrator;
@@ -27,12 +29,14 @@ public class SyncController {
     private final SyncOrchestrator orchestrator;
     private final DeadLetterQueue dlq;
     private final StatusBroadcaster broadcaster;
+    private final AuthorizationService authz;
 
     public SyncController(SyncOrchestrator orchestrator, DeadLetterQueue dlq,
-            StatusBroadcaster broadcaster) {
+            StatusBroadcaster broadcaster, AuthorizationService authz) {
         this.orchestrator = orchestrator;
         this.dlq = dlq;
         this.broadcaster = broadcaster;
+        this.authz = authz;
     }
 
     /**
@@ -42,23 +46,27 @@ public class SyncController {
      */
     @GetMapping(value = "/sync/jobs/{id}/events", produces = "text/event-stream")
     public SseEmitter syncEvents(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         var tenant = TenantContextHolder.getTenantId().value();
         return broadcaster.subscribe(tenant + ":" + id);
     }
 
     @PostMapping("/pipelines/{id}/sync/start")
     public ResponseEntity<SyncJob> start(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         return ResponseEntity.ok(orchestrator.start(id));
     }
 
     @PostMapping("/pipelines/{id}/sync/stop")
     public ResponseEntity<Map<String, Object>> stop(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         orchestrator.stop(id);
         return ResponseEntity.ok(Map.of("pipelineId", id, "status", "STOPPED"));
     }
 
     @GetMapping("/pipelines/{id}/sync/status")
     public ResponseEntity<Map<String, Object>> status(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         var state = orchestrator.status(id);
         var stats = orchestrator.statistics(id);
         return ResponseEntity.ok(Map.of(
@@ -72,33 +80,39 @@ public class SyncController {
 
     @GetMapping("/sync/jobs")
     public ResponseEntity<List<SyncJob>> jobs() {
+        authz.require(ResourcePermission.EXECUTION_READ);
         return ResponseEntity.ok(orchestrator.list());
     }
 
     @GetMapping("/sync/jobs/{id}")
     public ResponseEntity<SyncJob> job(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         return ResponseEntity.ok(orchestrator.get(id));
     }
 
     @GetMapping("/sync/jobs/{id}/statistics")
     public ResponseEntity<SyncStatistics> statistics(@PathVariable String id) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         return ResponseEntity.ok(orchestrator.statistics(id));
     }
 
     @GetMapping("/dlq")
     public ResponseEntity<List<DeadLetterEvent>> dlqList(
             @RequestParam(required = false) String pipelineId) {
+        authz.require(ResourcePermission.EXECUTION_READ);
         return ResponseEntity.ok(dlq.list(pipelineId));
     }
 
     @PostMapping("/dlq/{id}/replay")
     public ResponseEntity<Void> replay(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         dlq.replay(id);
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/dlq/{id}")
     public ResponseEntity<Void> deleteDlq(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_DELETE);
         dlq.delete(id);
         return ResponseEntity.noContent().build();
     }

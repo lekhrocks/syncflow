@@ -1,6 +1,8 @@
 package com.syncflow.api.controller;
 
 import com.syncflow.api.pipeline.PipelineDesignerService;
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.api.pipeline.dto.CreatePipelineDesignRequest;
 import com.syncflow.api.pipeline.dto.PipelineDesignResponse;
 import com.syncflow.api.pipeline.dto.UpdatePipelineDesignRequest;
@@ -34,14 +36,17 @@ import java.util.Map;
 public class PipelineDesignerController {
 
     private final PipelineDesignerService service;
+    private final AuthorizationService authz;
 
-    public PipelineDesignerController(PipelineDesignerService service) {
+    public PipelineDesignerController(PipelineDesignerService service, AuthorizationService authz) {
         this.service = service;
+        this.authz = authz;
     }
 
     @PostMapping
     public ResponseEntity<PipelineDesignResponse> create(
             @Valid @RequestBody CreatePipelineDesignRequest req) {
+        authz.require(ResourcePermission.PIPELINE_WRITE);
         var name = new PipelineName(req.name());
         var source = new SourceReference(req.sourceConnectionId(), req.sourceSchema(), req.sourceTable());
         var dest = new DestinationReference(req.destConnectionId(), req.destSchema(), req.destTable(),
@@ -59,12 +64,14 @@ public class PipelineDesignerController {
 
     @GetMapping
     public ResponseEntity<List<PipelineDesignResponse>> list() {
+        authz.require(ResourcePermission.PIPELINE_READ);
         var list = service.list().stream().map(PipelineDesignResponse::from).toList();
         return ResponseEntity.ok(list);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<PipelineDesignResponse> get(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_READ);
         return ResponseEntity.ok(PipelineDesignResponse.from(service.get(id)));
     }
 
@@ -72,6 +79,7 @@ public class PipelineDesignerController {
     public ResponseEntity<PipelineDesignResponse> update(
             @PathVariable String id,
             @RequestBody UpdatePipelineDesignRequest req) {
+        authz.require(ResourcePermission.PIPELINE_WRITE);
         var existing = service.get(id);
         var name = req.name() != null ? new PipelineName(req.name()) : existing.name();
         var source = req.sourceConnectionId() != null
@@ -98,34 +106,40 @@ public class PipelineDesignerController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_DELETE);
         service.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/validate")
     public ResponseEntity<ValidationResult> validate(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_READ);
         return ResponseEntity.ok(service.validate(id));
     }
 
     @PostMapping("/{id}/rollback")
     public ResponseEntity<PipelineDesignResponse> rollback(
             @PathVariable String id, @RequestParam int version) {
+        authz.require(ResourcePermission.PIPELINE_WRITE);
         return ResponseEntity.ok(PipelineDesignResponse.from(service.rollback(id, version)));
     }
 
     @GetMapping("/{id}/versions")
     public ResponseEntity<List<PipelineDesignResponse>> versions(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_READ);
         var list = service.versions(id).stream().map(PipelineDesignResponse::from).toList();
         return ResponseEntity.ok(list);
     }
 
     @GetMapping("/{id}/preview")
     public ResponseEntity<PipelinePreview> preview(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_EXECUTE);
         return ResponseEntity.ok(service.preview(id));
     }
 
     @GetMapping("/{id}/conflicts")
     public ResponseEntity<ConflictReport> conflicts(@PathVariable String id) {
+        authz.require(ResourcePermission.PIPELINE_READ);
         return ResponseEntity.ok(service.detectConflicts(id));
     }
 }

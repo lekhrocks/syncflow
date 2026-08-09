@@ -1,6 +1,8 @@
 package com.syncflow.api.controller;
 
 import com.syncflow.api.agent.ai.domain.AgentContext;
+import com.syncflow.api.security.rbac.AuthorizationService;
+import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.api.agent.ai.domain.AgentResult;
 import com.syncflow.api.agent.ai.domain.Conversation;
 import com.syncflow.api.agent.ai.domain.ReasoningPlan;
@@ -24,14 +26,18 @@ public class EnterpriseAiController {
 
     private final AgentOrchestrator orchestrator;
     private final KnowledgeBase knowledgeBase;
+    private final AuthorizationService authz;
 
-    public EnterpriseAiController(AgentOrchestrator orchestrator, KnowledgeBase knowledgeBase) {
+    public EnterpriseAiController(AgentOrchestrator orchestrator, KnowledgeBase knowledgeBase,
+            AuthorizationService authz) {
         this.orchestrator = orchestrator;
         this.knowledgeBase = knowledgeBase;
+        this.authz = authz;
     }
 
     @PostMapping("/chat")
     public ResponseEntity<Conversation> chat(@RequestBody Map<String, String> body) {
+        authz.require(ResourcePermission.AI_USE);
         var session = body.getOrDefault("sessionId", UUID.randomUUID().toString());
         var userId = body.getOrDefault("userId", "anonymous");
         var tenantId = body.getOrDefault("tenantId", "default");
@@ -42,11 +48,13 @@ public class EnterpriseAiController {
 
     @PostMapping("/plan")
     public ResponseEntity<ReasoningPlan> createPlan(@RequestBody Map<String, String> body) {
+        authz.require(ResourcePermission.AI_USE);
         return ResponseEntity.ok(orchestrator.createPlan(body.get("goal")));
     }
 
     @PostMapping("/analyze")
     public ResponseEntity<List<AgentResult>> analyze(@RequestBody Map<String, String> body) {
+        authz.require(ResourcePermission.AI_USE);
         var plan = orchestrator.createPlan(body.get("goal"));
         var context = new AgentContext(
                 body.get("workspaceId"), body.get("pipelineId"),
@@ -56,11 +64,13 @@ public class EnterpriseAiController {
 
     @PostMapping("/document")
     public ResponseEntity<List<KnowledgeBase.Document>> document(@RequestBody Map<String, String> body) {
+        authz.require(ResourcePermission.AI_USE);
         return ResponseEntity.ok(knowledgeBase.search(body.get("query")));
     }
 
     @PostMapping("/review")
     public ResponseEntity<List<AgentResult>> review(@RequestBody Map<String, String> body) {
+        authz.require(ResourcePermission.AI_USE);
         var plan = orchestrator.createPlan("review " + body.getOrDefault("pipelineId", ""));
         var context = new AgentContext(null, body.get("pipelineId"), null, Map.of());
         return ResponseEntity.ok(orchestrator.executePlan(plan, context));
@@ -68,6 +78,7 @@ public class EnterpriseAiController {
 
     @PostMapping("/recommend")
     public ResponseEntity<List<AgentResult>> recommend(@RequestBody Map<String, String> body) {
+        authz.require(ResourcePermission.AI_USE);
         var plan = orchestrator.createPlan("optimize " + body.getOrDefault("pipelineId", ""));
         var context = new AgentContext(null, body.get("pipelineId"), null, Map.of());
         return ResponseEntity.ok(orchestrator.executePlan(plan, context));
@@ -75,6 +86,7 @@ public class EnterpriseAiController {
 
     @GetMapping("/history")
     public ResponseEntity<List<Conversation>> history(@RequestParam String sessionId) {
+        authz.require(ResourcePermission.AI_USE);
         return ResponseEntity.ok(orchestrator.history(sessionId));
     }
 }

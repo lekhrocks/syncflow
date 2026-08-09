@@ -9,6 +9,7 @@ import com.syncflow.core.connection.ConnectionProperties;
 import com.syncflow.core.connection.ConnectionStatus;
 import com.syncflow.core.connection.ConnectionType;
 import com.syncflow.core.connection.Credentials;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -18,6 +19,10 @@ import java.util.Map;
 @Mapper(componentModel = "spring")
 public abstract class ConnectionMapper {
 
+    // Reuse the Spring-managed Jackson mapper (JSR-310 aware); do not build a
+    // per-call ObjectMapper (ignores configured Jackson modules).
+    @Autowired
+    protected ObjectMapper objectMapper;
     @Mapping(target = "id", expression = "java(domain.getId().value())")
     @Mapping(target = "connectionType", expression = "java(domain.getProperties().type().name())")
     @Mapping(target = "host", expression = "java(domain.getProperties().host())")
@@ -55,7 +60,7 @@ public abstract class ConnectionMapper {
         if (map == null || map.isEmpty())
             return null;
         try {
-            return new ObjectMapper().writeValueAsString(map);
+            return objectMapper.writeValueAsString(map);
         } catch (Exception e) {
             return null;
         }
@@ -65,10 +70,9 @@ public abstract class ConnectionMapper {
         if (json == null || json.isBlank())
             return Map.of();
         try {
-            var mapper = new ObjectMapper();
-            var type = mapper.getTypeFactory().constructMapType(
+            var type = objectMapper.getTypeFactory().constructMapType(
                     HashMap.class, String.class, String.class);
-            return mapper.readValue(json, type);
+            return objectMapper.readValue(json, type);
         } catch (Exception e) {
             return Map.of();
         }

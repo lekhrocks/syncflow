@@ -2,6 +2,7 @@ package com.syncflow.api.security;
 
 import com.syncflow.api.config.JwtProperties;
 import com.syncflow.api.user.repository.UserRepository;
+import com.syncflow.tenant.TenantId;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -64,11 +65,15 @@ public class AuthService {
 
     private String issueToken(String username, java.util.List<String> roles) {
         var now = Instant.now();
+        // Single-tenant platform: tokens carry the default tenant. TenantFilter
+        // derives scope from these claims (tid/oid/wid/pid), never from client
+        // headers. Per-tenant account claims are the documented multi-tenant path.
         var claims = JwtClaimsSet.builder()
                 .issuer(jwtProperties.getIssuer())
                 .issuedAt(now)
                 .expiresAt(now.plusSeconds(jwtProperties.getExpiryMinutes() * 60))
                 .subject(username)
+                .claim("tid", TenantId.DEFAULT.value())
                 .claim("scope", String.join(",", roles))
                 .build();
         // Pin the JWS algorithm to HS256 so Nimbus selects the matching HS256 key.

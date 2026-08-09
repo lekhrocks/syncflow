@@ -40,8 +40,12 @@ services:
       SPRING_DATASOURCE_USERNAME: syncflow
       SPRING_DATASOURCE_PASSWORD: syncflow
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      # JWT auth (must-change-password is on for admin-provisioned accounts).
-      SYNCFLOW_JWT_SECRET: ${SYNCFLOW_JWT_SECRET:-c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==}
+      # ─── DEV-ONLY secrets. The app has no defaults (fail-fast) — supply real
+      #     values in non-local environments. NEVER use these in production.
+      #     AES-256 key = base64("dev-encryption-key-0123456789abc") (32 bytes).
+      SYNCFLOW_ENCRYPTION_KEY: ZGV2LWVuY3J5cHRpb24ta2V5LTAxMjM0NTY3ODlhYmM=
+      #     HS256 secret = base64 of a 44-byte dev-only HMAC key.
+      SYNCFLOW_JWT_SECRET: ZGV2LWp3dC1zZWNyZXQta2V5LWZvci1sb2NhbC1kZXYtb25seS1rZXktMDE=
       # Kafka transport (off by default).
       SYNCFLOW_KAFKA_ENABLED: ${SYNCFLOW_KAFKA_ENABLED:-false}
       SYNCFLOW_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
