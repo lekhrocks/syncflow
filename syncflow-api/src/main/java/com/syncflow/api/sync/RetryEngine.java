@@ -8,8 +8,20 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Retry scheduling for transient sync failures.
+ * <p>
+ * On a retryable failure, the event is RE-ENQUEUED (via the registered
+ * re-enqueue callback) after an exponential backoff instead of only being
+ * counted. Exhausting {@link #MAX_RETRIES} or a permanent error moves the event
+ * to the DLQ. The counting semantics (shouldRetry + delay) are preserved so
+ * callers and unit tests keep working.
+ */
 @Component
 public class RetryEngine {
 
@@ -19,10 +31,26 @@ public class RetryEngine {
     private final Map<String, RetryState> retries = new ConcurrentHashMap<>();
     private final DeadLetterQueue dlq;
     private final MeterRegistry meterRegistry;
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    /** (tenantId, pipelineId, event) → re-enqueue into the sync engine. Set by the owner. */
+    private volatile RetryReenqueue reenqueue;
+
+    /** Re-enqueue hook carrying the tenant captured at evaluate() time. */
+    @FunctionalInterface
+    public interface RetryReenqueue {
+
+        void accept(String tenantId, String pipelineId, CDCEvent event);
+    }
 
     public RetryEngine(DeadLetterQueue dlq, MeterRegistry meterRegistry) {
         this.dlq = dlq;
         this.meterRegistry = meterRegistry;
+    }
+
+    /** The sync engine wires its {@code submitEvent} here so retries actually re-deliver. */
+    public void setReenqueue(RetryReenqueue reenqueue) {
+        this.reenqueue = reenqueue;
     }
 
     public RetryDecision evaluate(String pipelineId, CDCEvent event, FailureReason reason) {
@@ -41,6 +69,18 @@ public class RetryEngine {
         var delay = Duration.ofMillis(BASE_DELAY_MS * (1L << (state.count.get() - 1)));
         meterRegistry.counter("syncflow.sync.retries",
                 "pipeline", pipelineId).increment();
+
+        // Actually re-deliver after the backoff (not just count). The re-enqueue
+        // callback is registered by SyncOrchestrator; a null callback degrades to
+        // the previous count-only behavior. The tenant is captured here (the
+        // worker thread carries it) and re-established in the scheduled task so
+        // the re-submit is tenant-scoped.
+        var reenqueue = this.reenqueue;
+        if (reenqueue != null) {
+            var tenantId = com.syncflow.tenant.TenantContextHolder.getTenantId().value();
+            scheduler.schedule(() -> reenqueue.accept(tenantId, pipelineId, event),
+                    delay.toMillis(), TimeUnit.MILLISECONDS);
+        }
         return new RetryDecision(true, delay);
     }
 

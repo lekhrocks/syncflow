@@ -69,6 +69,19 @@ public class SyncOrchestrator {
         this.dlq = dlq;
         this.meterRegistry = meterRegistry;
         this.broadcaster = broadcaster;
+        // Wire retry re-enqueue back into this orchestrator's event queue so a
+        // transient failure actually re-delivers after backoff instead of only
+        // being counted. The retry scheduler thread does not carry the request
+        // ThreadLocal, so the callback re-establishes the tenant captured at
+        // evaluate() time before re-submitting.
+        retryEngine.setReenqueue((tenantId, pipelineId, event) -> {
+            TenantContextHolder.set(TenantSupport.workerContext(TenantId.from(tenantId)));
+            try {
+                submitEvent(pipelineId, event);
+            } finally {
+                TenantContextHolder.clear();
+            }
+        });
     }
 
     /** Tenant-scoped map key so runtime state cannot collide across tenants. */

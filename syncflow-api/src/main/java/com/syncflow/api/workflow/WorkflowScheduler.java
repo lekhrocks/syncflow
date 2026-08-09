@@ -1,5 +1,8 @@
 package com.syncflow.api.workflow;
 
+import com.syncflow.core.workflow.TaskExecution;
+import com.syncflow.core.workflow.TaskStatus;
+import com.syncflow.core.workflow.TaskType;
 import com.syncflow.core.workflow.WorkflowId;
 import com.syncflow.core.workflow.WorkflowInstance;
 import com.syncflow.core.workflow.WorkflowStatus;
@@ -12,7 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,6 +23,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Orchestrates pipeline workflows as a DAG of tasks.
+ * <p>
+ * Tasks are executed in dependency order: a task becomes ready when every task
+ * it {@code dependsOn} has a COMPLETED execution. The scheduler advances the
+ * DAG by executing ready tasks (via the {@link TaskExecutor} map), recording a
+ * {@link TaskExecution} for each attempt, and marking the workflow COMPLETED
+ * when all tasks finish. The previous implementation never recorded task
+ * completions, so the graph could never progress.
+ */
 @Component
 public class WorkflowScheduler {
 
@@ -31,6 +44,10 @@ public class WorkflowScheduler {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final AtomicReference<Instant> lastHeartbeat = new AtomicReference<>(Instant.now());
 
+    /** Task-type → executor. Unmapped types record a COMPLETED no-op execution. */
+    private final Map<TaskType, java.util.function.Function<String, Void>> taskExecutors =
+            new ConcurrentHashMap<>();
+
     public WorkflowScheduler(TaskQueue taskQueue, WorkflowBuilder builder,
             MeterRegistry meterRegistry) {
         this.taskQueue = taskQueue;
@@ -39,6 +56,11 @@ public class WorkflowScheduler {
 
         scheduler.scheduleAtFixedRate(this::tick, 0, 2, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(this::heartbeat, 0, 10, TimeUnit.SECONDS);
+    }
+
+    /** Register an executor for a task type (e.g. SNAPSHOT → snapshotExecutor::start). */
+    public void registerExecutor(TaskType type, java.util.function.Function<String, Void> executor) {
+        taskExecutors.put(type, executor);
     }
 
     public WorkflowInstance create(String pipelineId) {
@@ -108,17 +130,56 @@ public class WorkflowScheduler {
             if (wf.status() != WorkflowStatus.RUNNING)
                 return;
 
-            var completedTasks = completedTaskIds(wf);
-            var ready = wf.tasks().stream()
-                    .filter(t -> !completedTasks.contains(t.taskId()))
-                    .filter(t -> completedTasks.containsAll(t.dependsOn()))
-                    .toList();
+            var completed = wf.completedTaskIds();
+            // A workflow is done when every task has a COMPLETED execution.
+            if (wf.tasks().stream().allMatch(t -> completed.contains(t.taskId()))) {
+                workflows.put(id, wf.completed(Instant.now()));
+                return;
+            }
 
-            ready.forEach(t -> taskQueue.enqueue(
-                    id.value(), t.taskId(), t.type().name(), wf.pipelineId()));
-
-            meterRegistry.gauge("syncflow.workflow.queue.size", taskQueue.size());
+            var ready = findReadyTasks(wf);
+            for (var task : ready) {
+                // Skip tasks already queued/in-flight (an execution exists, just not COMPLETED).
+                if (isInFlight(wf, task.taskId()))
+                    continue;
+                execute(id, wf, task);
+            }
         });
+    }
+
+    /** Execute a single ready task and record its outcome. */
+    private void execute(WorkflowId id, WorkflowInstance wf, WorkflowTask task) {
+        var executionId = UUID.randomUUID().toString();
+        var started = Instant.now();
+        var runningExec = new TaskExecution(executionId, task.taskId(), TaskStatus.RUNNING,
+                "scheduler", null, task.retryCount() + 1, started, null);
+        workflows.put(id, wf.withExecution(runningExec));
+
+        try {
+            var executor = taskExecutors.get(task.type());
+            if (executor != null) {
+                executor.apply(wf.pipelineId());
+            }
+            var done = new TaskExecution(executionId, task.taskId(), TaskStatus.COMPLETED,
+                    "scheduler", null, task.retryCount() + 1, started, Instant.now());
+            var current = workflows.get(id);
+            workflows.put(id, current.withExecution(done));
+            meterRegistry.counter("syncflow.workflow.tasks.completed",
+                    "pipeline", wf.pipelineId()).increment();
+        } catch (Exception e) {
+            var failed = new TaskExecution(executionId, task.taskId(), TaskStatus.FAILED,
+                    "scheduler", e.getMessage(), task.retryCount() + 1, started, Instant.now());
+            var current = workflows.get(id);
+            workflows.put(id, current.withExecution(failed));
+            meterRegistry.counter("syncflow.workflow.tasks.failed",
+                    "pipeline", wf.pipelineId()).increment();
+        }
+    }
+
+    /** True if the task has a non-COMPLETED execution already (queued/running/failed). */
+    private boolean isInFlight(WorkflowInstance wf, String taskId) {
+        return wf.executions().stream().anyMatch(e -> e.taskId().equals(taskId)
+                && e.status() != TaskStatus.COMPLETED);
     }
 
     private void heartbeat() {
@@ -129,13 +190,10 @@ public class WorkflowScheduler {
         return Duration.between(lastHeartbeat.get(), Instant.now()).getSeconds() < 30;
     }
 
-    private Set<String> completedTaskIds(WorkflowInstance wf) {
-        return Set.of();
-    }
-
     private List<WorkflowTask> findReadyTasks(WorkflowInstance wf) {
-        var completed = completedTaskIds(wf);
+        var completed = wf.completedTaskIds();
         return wf.tasks().stream()
+                .filter(t -> !completed.contains(t.taskId()))
                 .filter(t -> completed.containsAll(t.dependsOn()))
                 .toList();
     }

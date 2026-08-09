@@ -36,7 +36,7 @@ class SyncEngineUnitTest {
     private final DeadLetterEventRepository dlqRepo = mock(DeadLetterEventRepository.class);
     private final ProcessedEventRepository processedRepo = mock(ProcessedEventRepository.class);
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-    private final DeadLetterQueue dlq = new DeadLetterQueue(dlqRepo, objectMapper);
+    private final DeadLetterQueue dlq = new DeadLetterQueue(dlqRepo, objectMapper, null);
     private final RetryEngine retry = new RetryEngine(dlq, new SimpleMeterRegistry());
     private final EventIdempotencyStore idempotency = new EventIdempotencyStore(processedRepo);
     private final DestinationRouterStub router = new DestinationRouterStub();
