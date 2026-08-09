@@ -307,4 +307,4 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
         }
     }
 
-    }
+}
