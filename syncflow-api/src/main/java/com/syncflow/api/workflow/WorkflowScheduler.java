@@ -109,8 +109,10 @@ public class WorkflowScheduler {
     /**
      * Resets leader flag and clears all tracked workflows. Used in test teardown.
      */
+    @Transactional
     public void reset() {
         leader.set(false);
+        repository.deleteAll();
     }
 
     private void tick() {
