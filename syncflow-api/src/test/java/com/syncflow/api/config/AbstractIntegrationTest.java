@@ -15,7 +15,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -44,8 +43,7 @@ import java.util.Base64;
 public abstract class AbstractIntegrationTest {
 
     /** Matches the base64 secret used by the integration tests. */
-    protected static final String TEST_JWT_SECRET =
-            "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==";
+    protected static final String TEST_JWT_SECRET = "c3luY2Zsb3ctaHMyNTYtand0LXNlY3JldC1rZXktMjAyNi1jaGFuZ2UtaW4tcHJvZA==";
 
     @LocalServerPort
     protected int port;
@@ -60,7 +58,9 @@ public abstract class AbstractIntegrationTest {
         RestAssured.reset();
     }
 
-    /** Admin bearer token scoped to {@code tenantId}; subject 'admin' => full RBAC. */
+    /**
+     * Admin bearer token scoped to {@code tenantId}; subject 'admin' => full RBAC.
+     */
     protected String adminToken(String tenantId) {
         var encoder = new NimbusJwtEncoder(new ImmutableJWKSet<>(new JWKSet(
                 new OctetSequenceKey.Builder(new SecretKeySpec(
@@ -74,7 +74,8 @@ public abstract class AbstractIntegrationTest {
                 // The single-tenant default has a canonical UUID value; a literal
                 // "default" is a DIFFERENT TenantId and would scope to nothing.
                 .claim("tid", "default".equals(tenantId)
-                        ? com.syncflow.tenant.TenantId.DEFAULT.value() : tenantId)
+                        ? com.syncflow.tenant.TenantId.DEFAULT.value()
+                        : tenantId)
                 .claim("scope", "ADMIN")
                 .build();
         return encoder.encode(JwtEncoderParameters.from(

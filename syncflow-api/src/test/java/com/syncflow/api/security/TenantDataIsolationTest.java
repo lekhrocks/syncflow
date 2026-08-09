@@ -80,7 +80,10 @@ class TenantDataIsolationTest {
         RestAssured.port = port;
     }
 
-    /** An admin bearer token scoped to the given tenant (subject 'admin' => full RBAC). */
+    /**
+     * An admin bearer token scoped to the given tenant (subject 'admin' => full
+     * RBAC).
+     */
     private String tokenFor(String tenantId) {
         var claims = JwtClaimsSet.builder()
                 .issuer("syncflow")

@@ -25,7 +25,8 @@ import java.util.Set;
  * Resolves the tenant context for the current request.
  *
  * SECURITY: the tenant is derived from the AUTHENTICATED PRINCIPAL (the JWT's
- * tenant claims, attached by {@link com.syncflow.api.config.TenantJwtAuthenticationConverter})
+ * tenant claims, attached by
+ * {@link com.syncflow.api.config.TenantJwtAuthenticationConverter})
  * — never trusted from client headers. An authenticated caller cannot switch
  * tenant by spoofing {@code X-Tenant-Id}.
  *
@@ -100,7 +101,10 @@ public class TenantFilter extends OncePerRequestFilter {
         return contextFromHeaders(req, auth);
     }
 
-    /** Principal carries a {@link PrincipalTenant} (set by TenantJwtAuthenticationConverter). */
+    /**
+     * Principal carries a {@link PrincipalTenant} (set by
+     * TenantJwtAuthenticationConverter).
+     */
     private PrincipalTenant principalTenant(Authentication auth) {
         if (auth.getDetails() instanceof PrincipalTenant pt) {
             return pt;

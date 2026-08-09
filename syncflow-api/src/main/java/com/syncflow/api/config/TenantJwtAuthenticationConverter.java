@@ -24,7 +24,8 @@ import java.util.Collection;
  *
  * Authority mapping mirrors the default {@code JwtAuthenticationConverter}: the
  * {@code scope} claim becomes {@code SCOPE_*}-prefixed authorities (RBAC's
- * {@code PolicyResolver} still grants ADMIN via the username or the ADMIN role).
+ * {@code PolicyResolver} still grants ADMIN via the username or the ADMIN
+ * role).
  */
 @Component
 public class TenantJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
@@ -41,11 +42,12 @@ public class TenantJwtAuthenticationConverter implements Converter<Jwt, Abstract
 
     /** Tenant scope carried on the token details; read by {@code TenantFilter}. */
     public record PrincipalTenant(TenantId tenantId, String organizationId,
-                                  String workspaceId, String projectId) {
+            String workspaceId, String projectId) {
     }
 
     static PrincipalTenant extractTenant(Jwt jwt) {
-        var tenantClaim = jwt.hasClaim("tid") ? jwt.getClaimAsString("tid")
+        var tenantClaim = jwt.hasClaim("tid")
+                ? jwt.getClaimAsString("tid")
                 : jwt.hasClaim("tenant") ? jwt.getClaimAsString("tenant") : null;
         var subject = jwt.getSubject();
 

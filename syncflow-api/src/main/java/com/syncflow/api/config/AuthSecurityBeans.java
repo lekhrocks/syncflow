@@ -17,7 +17,8 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
  * DaoAuthenticationProvider over the user-details service, and the JWT
  * authentication converter that maps the JWT {@code scope} claim to
  * {@code SCOPE_*} authorities and carries the caller's tenant claims (read by
- * TenantFilter / RBAC — tenant is taken from the principal, not client headers).
+ * TenantFilter / RBAC — tenant is taken from the principal, not client
+ * headers).
  */
 @Configuration
 public class AuthSecurityBeans {
