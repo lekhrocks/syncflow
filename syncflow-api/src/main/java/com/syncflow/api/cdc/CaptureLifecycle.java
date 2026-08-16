@@ -140,14 +140,15 @@ public class CaptureLifecycle {
         // task #7: start Kafka consumer bridge when Kafka is enabled
         kafkaCdcConsumer.ifPresent(c -> c.startConsuming(pipelineId, tenantContext));
 
-        var savedOffset = offsetStore.get(pipelineId);
+        var savedOffset = offsetStore.get(key);
         if (!savedOffset.isEmpty()) {
             log.info("CDC resuming from saved offset for pipeline={} offset={}", pipelineId, savedOffset);
         } else {
             log.info("CDC starting fresh (no saved offset) for pipeline={}", pipelineId);
         }
 
-        activeCaptures.put(key, new CaptureEntry(connector, publisher, pipelineId));
+        activeCaptures.put(key, new CaptureEntry(connector, publisher, pipelineId,
+                tenantContext.tenantId().value()));
         // Persist active capture to DB so a pod restart can resume.
         persistActiveCapture(key, tenantContext.tenantId().value(), pipelineId, CaptureStatus.RUNNING, Map.of());
         log.info("CDC started for pipeline={} connectorType={} kafka={}",
@@ -163,7 +164,7 @@ public class CaptureLifecycle {
             if (entry.connector() != null) {
                 var offset = entry.connector().currentOffset();
                 if (!offset.isEmpty()) {
-                    offsetStore.save(pipelineId, offset);
+                    offsetStore.save(key, offset);
                     // Persist the final offset to the durable capture record.
                     persistActiveCapture(key, tenantContext.tenantId().value(), pipelineId,
                             CaptureStatus.INACTIVE, offset);
@@ -274,7 +275,9 @@ public class CaptureLifecycle {
         if (entry.connector() != null) {
             var offset = entry.connector().currentOffset();
             if (!offset.isEmpty())
-                offsetStore.save(entry.pipelineId(), offset);
+                // D2: scope the offset key by tenant so two tenants with the same
+                // pipelineId do not overwrite each other's resume position.
+                offsetStore.save(tenantKey(entry.tenantId(), entry.pipelineId()), offset);
             entry.connector().stopCDC();
         }
         try {
@@ -358,6 +361,7 @@ public class CaptureLifecycle {
         return count;
     }
 
-    private record CaptureEntry(CdcCapableConnector connector, EventPublisher publisher, String pipelineId) {
+    private record CaptureEntry(CdcCapableConnector connector, EventPublisher publisher, String pipelineId,
+            String tenantId) {
     }
 }

@@ -6,7 +6,12 @@ import org.springframework.stereotype.Component;
 import java.util.Properties;
 
 @Component
-public class MySqlWriter extends JdbcBatchWriter {
+public class MySqlWriter extends PooledJdbcBatchWriter {
+
+    @Override
+    protected String poolType() {
+        return "mysql";
+    }
 
     @Override
     protected String jdbcUrl(ConnectionConfiguration config) {
