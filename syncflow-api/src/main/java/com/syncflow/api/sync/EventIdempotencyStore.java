@@ -36,14 +36,25 @@ public class EventIdempotencyStore {
         return repository.existsByEventId(eventId);
     }
 
+    /**
+     * Atomically mark the event processed and return whether THIS call was the
+     * one that did it (true) or the event was already processed (false).
+     * The single SQL {@code INSERT ... ON CONFLICT DO NOTHING} ensures exactly-once
+     * semantics even when multiple workers race for the same event.
+     */
+    public boolean markProcessedIfAbsent(String eventId, String tenantId, String pipelineId) {
+        // Tenant is implicit in the pipelineId scoping — the event_id is
+        // globally unique per CDC source, so a composite key isn't needed.
+        int rows = repository.insertIfAbsent(eventId, pipelineId, Instant.now());
+        return rows > 0;
+    }
+
     public void markProcessed(String eventId) {
         markProcessed(eventId, "unknown");
     }
 
     public void markProcessed(String eventId, String pipelineId) {
-        if (!repository.existsByEventId(eventId)) {
-            repository.save(new ProcessedEventEntity(eventId, pipelineId, Instant.now()));
-        }
+        repository.save(new ProcessedEventEntity(eventId, pipelineId, Instant.now()));
     }
 
     public void evict(String eventId) {

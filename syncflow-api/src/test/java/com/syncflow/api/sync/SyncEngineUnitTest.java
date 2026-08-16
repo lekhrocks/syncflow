@@ -1,5 +1,9 @@
 package com.syncflow.api.sync;
 
+import com.syncflow.api.config.RuntimeProperties;
+import com.syncflow.tenant.TenantContext;
+import com.syncflow.tenant.TenantContextHolder;
+import com.syncflow.tenant.TenantId;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.syncflow.api.sync.entity.DeadLetterEventEntity;
@@ -15,11 +19,16 @@ import com.syncflow.core.cdc.EventSource;
 import com.syncflow.core.cdc.OffsetInformation;
 import com.syncflow.core.sync.FailureReason;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -37,9 +46,20 @@ class SyncEngineUnitTest {
     private final ProcessedEventRepository processedRepo = mock(ProcessedEventRepository.class);
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     private final DeadLetterQueue dlq = new DeadLetterQueue(dlqRepo, objectMapper);
-    private final RetryEngine retry = new RetryEngine(dlq, new SimpleMeterRegistry());
+    private final RuntimeProperties runtime = new RuntimeProperties();
+    private final RetryEngine retry = new RetryEngine(dlq, new SimpleMeterRegistry(), runtime);
     private final EventIdempotencyStore idempotency = new EventIdempotencyStore(processedRepo);
     private final DestinationRouterStub router = new DestinationRouterStub();
+    private final TenantContext ctx = new TenantContext(TenantId.DEFAULT, null, null, null,
+            "test-user", Set.of(), Instant.now());
+
+    @BeforeEach
+    void setUp() {
+        // Mirror the production TenantFilter behaviour: every test request runs
+        // with a default tenant context in scope. Without this, calls that pass
+        // TenantContextHolder.get() into orchestrators NPE in unit tests.
+        TenantContextHolder.set(ctx);
+    }
 
     // --- Transformation (simulated via the chain used in SyncOrchestrator) ---
 
@@ -61,7 +81,7 @@ class SyncEngineUnitTest {
 
     @Test
     void transformDefaultValue() {
-        var input = new java.util.HashMap<String, Object>();
+        var input = new HashMap<String, Object>();
         input.put("id", 1);
         input.put("nickname", null);
         var result = applyDefault(input, "nickname", "nickname", "N/A");
@@ -89,7 +109,7 @@ class SyncEngineUnitTest {
 
     @Test
     void filterIsNullPasses() {
-        var input = new java.util.HashMap<String, Object>();
+        var input = new HashMap<String, Object>();
         input.put("deleted_at", null);
         assertTrue(applyIsNullFilter(input, "deleted_at"));
     }
@@ -127,7 +147,8 @@ class SyncEngineUnitTest {
     @Test
     void retryFirstAttemptSucceeds() {
         var event = createTestEvent("evt-1");
-        var decision = retry.evaluate("p-1", event, FailureReason.transientError("timeout"));
+        var decision = retry.evaluate("p-1", event, FailureReason.transientError("timeout"),
+                TenantContextHolder.get());
         assertTrue(decision.shouldRetry());
         assertEquals(Duration.ofMillis(1000), decision.delay());
 
@@ -142,11 +163,11 @@ class SyncEngineUnitTest {
 
         // Exhaust 3 retries
         for (int i = 0; i < 3; i++) {
-            var decision = retry.evaluate("p-1", event, reason);
+            var decision = retry.evaluate("p-1", event, reason, TenantContextHolder.get());
             assertTrue(decision.shouldRetry());
         }
         // 4th attempt → DLQ
-        var finalDecision = retry.evaluate("p-1", event, reason);
+        var finalDecision = retry.evaluate("p-1", event, reason, TenantContextHolder.get());
         assertFalse(finalDecision.shouldRetry());
         // event was persisted to the DLQ repo
         verify(dlqRepo).save(any(DeadLetterEventEntity.class));
@@ -157,20 +178,21 @@ class SyncEngineUnitTest {
         var event = createTestEvent("evt-3");
         FailureReason reason = FailureReason.transientError("timeout");
 
-        var d1 = retry.evaluate("p-1", event, reason);
+        var d1 = retry.evaluate("p-1", event, reason, TenantContextHolder.get());
         assertEquals(1000, d1.delay().toMillis());
 
-        var d2 = retry.evaluate("p-1", event, reason);
+        var d2 = retry.evaluate("p-1", event, reason, TenantContextHolder.get());
         assertEquals(2000, d2.delay().toMillis());
 
-        var d3 = retry.evaluate("p-1", event, reason);
+        var d3 = retry.evaluate("p-1", event, reason, TenantContextHolder.get());
         assertEquals(4000, d3.delay().toMillis());
     }
 
     @Test
     void permanentErrorGoesDirectlyToDlq() {
         var event = createTestEvent("evt-4");
-        var decision = retry.evaluate("p-1", event, FailureReason.permanentError("invalid schema"));
+        var decision = retry.evaluate("p-1", event, FailureReason.permanentError("invalid schema"),
+                TenantContextHolder.get());
         assertFalse(decision.shouldRetry());
         verify(dlqRepo).save(any(DeadLetterEventEntity.class));
     }
@@ -216,7 +238,8 @@ class SyncEngineUnitTest {
     @Test
     void dlqStoresFailedEvent() {
         var event = createTestEvent("evt-8");
-        dlq.add("p-1", event, FailureReason.permanentError("bad data"), 3);
+        dlq.add("p-1", event, FailureReason.permanentError("bad data"), 3,
+                TenantContextHolder.get());
         verify(dlqRepo).save(any(DeadLetterEventEntity.class));
     }
 
@@ -230,9 +253,9 @@ class SyncEngineUnitTest {
         when(dlqRepo.findByPipelineIdAndTenantIdOrderByCreatedAtDesc(eq("p-2"), anyString()))
                 .thenReturn(List.of(e2));
 
-        var p1Events = dlq.list("p-1");
+        var p1Events = dlq.list("p-1", TenantContextHolder.get());
         assertEquals(2, p1Events.size());
-        var p2Events = dlq.list("p-2");
+        var p2Events = dlq.list("p-2", TenantContextHolder.get());
         assertEquals(1, p2Events.size());
     }
 
@@ -247,7 +270,7 @@ class SyncEngineUnitTest {
         var e1 = dlqEntity("d1", "p-1", "e1");
         var e2 = dlqEntity("d2", "p-2", "e2");
         when(dlqRepo.findByTenantIdOrderByCreatedAtDesc(anyString())).thenReturn(List.of(e1, e2));
-        assertEquals(2, dlq.list(null).size());
+        assertEquals(2, dlq.list(null, TenantContextHolder.get()).size());
     }
 
     private DeadLetterEventEntity dlqEntity(String id, String pipelineId, String eventId) {
@@ -296,12 +319,12 @@ class SyncEngineUnitTest {
                 new EventSource("db", "public", "users", "postgresql"),
                 CDCOperation.INSERT,
                 new EventPayload(null, Map.of("id", 1, "name", "test"), Map.of("id", 1)),
-                new EventMetadata(1, java.time.Instant.now(), 0), null,
-                new OffsetInformation("PG", Map.of("lsn", "123"), "", java.time.Instant.now()));
+                new EventMetadata(1, Instant.now(), 0), null,
+                new OffsetInformation("PG", Map.of("lsn", "123"), "", Instant.now()));
     }
 
     private Map<String, Object> applyRename(Map<String, Object> input, String from, String to) {
-        var result = new java.util.LinkedHashMap<>(input);
+        var result = new LinkedHashMap<>(input);
         if (result.containsKey(from)) {
             result.put(to, result.remove(from));
         }
@@ -309,7 +332,7 @@ class SyncEngineUnitTest {
     }
 
     private Map<String, Object> applyUppercase(Map<String, Object> input, String src, String dest) {
-        var result = new java.util.LinkedHashMap<>(input);
+        var result = new LinkedHashMap<>(input);
         if (result.get(src) instanceof String s) {
             result.put(dest, s.toUpperCase());
         }
@@ -317,13 +340,13 @@ class SyncEngineUnitTest {
     }
 
     private Map<String, Object> applyDefault(Map<String, Object> input, String src, String dest, String def) {
-        var result = new java.util.LinkedHashMap<>(input);
+        var result = new LinkedHashMap<>(input);
         result.put(dest, result.get(src) != null ? result.get(src) : def);
         return result;
     }
 
     private Map<String, Object> applyIgnore(Map<String, Object> input, String col) {
-        var result = new java.util.LinkedHashMap<>(input);
+        var result = new LinkedHashMap<>(input);
         result.remove(col);
         return result;
     }
@@ -342,7 +365,7 @@ class SyncEngineUnitTest {
     }
 
     private Map<String, Object> applyMapping(Map<String, Object> input, Map<String, String> mapping) {
-        var result = new java.util.LinkedHashMap<String, Object>();
+        var result = new LinkedHashMap<String, Object>();
         input.forEach((k, v) -> {
             var destKey = mapping.getOrDefault(k, k);
             result.put(destKey, v);

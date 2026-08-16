@@ -5,6 +5,7 @@ import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.pipeline.PipelineDesign;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -25,9 +26,10 @@ public class ContextCollector {
     }
 
     public SyncFlowContext collect() {
+        var tenantContext = TenantContextHolder.get();
         var connections = connectionService.list();
         var pipelines = pipelineService.list();
-        var syncJobs = syncOrchestrator.list();
+        var syncJobs = syncOrchestrator.list(tenantContext);
 
         return new SyncFlowContext(
                 sanitizeConnections(connections),

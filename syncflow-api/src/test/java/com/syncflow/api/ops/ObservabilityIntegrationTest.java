@@ -5,6 +5,10 @@ import com.syncflow.api.ops.alert.AlertEngine;
 import com.syncflow.api.ops.alert.AlertSeverity;
 import com.syncflow.api.ops.health.DetailedHealthController;
 import com.syncflow.api.ops.health.HealthAggregator;
+import com.syncflow.tenant.TenantContext;
+import com.syncflow.tenant.TenantContextHolder;
+import com.syncflow.tenant.TenantId;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,6 +17,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
+
+import java.time.Instant;
+import java.util.Set;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.anyOf;
@@ -50,6 +57,16 @@ class ObservabilityIntegrationTest extends AbstractIntegrationTest {
     private DetailedHealthController healthController;
     @Autowired
     private AlertEngine alertEngine;
+
+    @BeforeEach
+    void setUp() {
+        // Default tenant context for orchestrator calls in tests.
+        TenantContextHolder.set(
+                new TenantContext(
+                        new TenantId("00000000-0000-0000-0000-000000000000"),
+                        null, null, null, "test-user", Set.of(),
+                        Instant.now()));
+    }
 
     // ============ Health endpoint ============
 

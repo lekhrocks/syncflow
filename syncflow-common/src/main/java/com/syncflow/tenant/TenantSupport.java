@@ -1,13 +1,13 @@
 package com.syncflow.tenant;
 
-import java.time.Instant;
-import java.util.Set;
-
 /**
  * Shared tenant helpers: the current request tenant, and the construction of a
  * worker-thread tenant context (virtual threads do not inherit the request
  * ThreadLocal). Centralizes the otherwise-repeated
  * {@code TenantContextHolder.getTenantId().value()} accessor.
+ * <p>
+ * Note: this is a legacy helper. New code should pass {@link TenantContext}
+ * explicitly through method parameters rather than relying on ThreadLocal.
  */
 public final class TenantSupport {
 
@@ -24,6 +24,6 @@ public final class TenantSupport {
 
     /** A tenant context for a background worker, carrying a system identity. */
     public static TenantContext workerContext(TenantId tenantId) {
-        return new TenantContext(tenantId, null, null, null, SYSTEM_USER, Set.of(), Instant.now());
+        return TenantContext.system(tenantId);
     }
 }

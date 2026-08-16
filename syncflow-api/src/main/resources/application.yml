@@ -76,6 +76,28 @@ springdoc:
     operations-sorter: method
 
 syncflow:
+  # Runtime tunables (queue/retry/poll constants). Bound to
+  # @ConfigurationProperties("syncflow.runtime") + @Validated on RuntimeProperties.
+  # Each value is env-overridable with its default inline — same pattern as the
+  # blocks below. Set e.g. SYNCFLOW_RUNTIME_SYNC_QUEUE_CAPACITY to override at deploy time.
+  runtime:
+    sync:
+      # Per-pipeline in-memory CDC event queue capacity (events). Raise under
+      # bursts so the worker drains in larger batches instead of dropping events.
+      queue-capacity: ${SYNCFLOW_RUNTIME_SYNC_QUEUE_CAPACITY:10000}
+      # Max events drained + written per batched DB call.
+      batch-size: ${SYNCFLOW_RUNTIME_SYNC_BATCH_SIZE:100}
+      # Poll timeout when the queue is empty before looping again.
+      poll-timeout: ${SYNCFLOW_RUNTIME_SYNC_POLL_TIMEOUT:500ms}
+    snapshot:
+      # Persist a cursor checkpoint every N batches so resume continues at the
+      # next row instead of re-reading from the start.
+      checkpoint-interval-batches: ${SYNCFLOW_RUNTIME_SNAPSHOT_CHECKPOINT_INTERVAL_BATCHES:5}
+    retry:
+      # Max delivery attempts per event before it's sent to the dead-letter queue.
+      max-attempts: ${SYNCFLOW_RUNTIME_RETRY_MAX_ATTEMPTS:3}
+      # Exponential-backoff base delay; doubles per retry (1s, 2s, 4s, ...).
+      base-delay: ${SYNCFLOW_RUNTIME_RETRY_BASE_DELAY:1000ms}
   pipeline:
     max-name-length: 255
     default-status: CREATED

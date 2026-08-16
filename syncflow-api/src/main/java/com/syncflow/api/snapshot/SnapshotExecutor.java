@@ -1,5 +1,7 @@
 package com.syncflow.api.snapshot;
 
+import com.syncflow.api.config.RuntimeProperties;
+import com.syncflow.api.connection.ConnectionMapper;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.metadata.ConnectorTypeMapper;
 import com.syncflow.api.pipeline.PipelineDesignerService;
@@ -7,7 +9,6 @@ import com.syncflow.api.runtimestate.RuntimeStateJson;
 import com.syncflow.api.snapshot.entity.SnapshotJobEntity;
 import com.syncflow.api.snapshot.repository.SnapshotJobRepository;
 import com.syncflow.api.sse.StatusBroadcaster;
-import com.syncflow.core.connection.Connection;
 import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.pipeline.PipelineDesign;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
@@ -25,9 +26,8 @@ import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.SnapshotCapableConnector;
 import com.syncflow.core.spi.writer.DestinationWriter;
 import com.syncflow.core.spi.writer.WriterRegistry;
+import com.syncflow.tenant.TenantContext;
 import com.syncflow.tenant.TenantContextHolder;
-import com.syncflow.tenant.TenantId;
-import com.syncflow.tenant.TenantSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -54,6 +55,7 @@ public class SnapshotExecutor {
     private final RuntimeStateJson json;
     private final MeterRegistry meterRegistry;
     private final StatusBroadcaster broadcaster;
+    private final RuntimeProperties runtime;
 
     // In-memory worker state: cancellation flags + tenant ownership. The job
     // payload itself is durable in snapshot_jobs; the in-memory job cache is a
@@ -69,7 +71,8 @@ public class SnapshotExecutor {
             SnapshotJobRepository jobRepository,
             RuntimeStateJson json,
             MeterRegistry meterRegistry,
-            StatusBroadcaster broadcaster) {
+            StatusBroadcaster broadcaster,
+            RuntimeProperties runtime) {
         this.pipelineService = pipelineService;
         this.connectionService = connectionService;
         this.connectorRegistry = connectorRegistry;
@@ -79,47 +82,49 @@ public class SnapshotExecutor {
         this.json = json;
         this.meterRegistry = meterRegistry;
         this.broadcaster = broadcaster;
+        this.runtime = runtime;
     }
 
-    public SnapshotJob start(String pipelineId) {
+    public SnapshotJob start(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
         var pipeline = pipelineService.get(pipelineId);
         var job = new SnapshotJob(pipelineId).withRunning();
         var snapshotId = job.getId().value();
-        persist(job);
+        persist(job, tenantContext);
         cancellations.put(snapshotId, new AtomicBoolean(false));
 
-        // Capture the tenant at request time; the worker's ThreadLocal won't see it.
-        var tenantId = TenantContextHolder.getTenantId();
-        tenantOf.put(snapshotId, tenantId.value());
-        Thread.startVirtualThread(() -> execute(tenantId, job, pipeline));
+        tenantOf.put(snapshotId, tenantContext.tenantId().value());
+        Thread.startVirtualThread(() -> execute(tenantContext, job, pipeline));
         return job;
     }
 
     @Transactional(readOnly = true)
-    public SnapshotJob get(String snapshotId) {
-        return java.util.Optional.ofNullable(findOwned(snapshotId))
+    public SnapshotJob get(String snapshotId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        return Optional.ofNullable(findOwned(snapshotId, tenantContext))
                 .map(this::toDomain)
                 .orElseThrow(() -> new NoSuchElementException("Snapshot not found: " + snapshotId));
     }
 
     /** Only the current tenant's snapshots. */
     @Transactional(readOnly = true)
-    public List<SnapshotJob> list() {
-        var tenant = TenantContextHolder.getTenantId().value();
-        return jobRepository.findByTenantIdOrderByCreatedAtDesc(tenant).stream()
+    public List<SnapshotJob> list(TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        return jobRepository.findByTenantIdOrderByCreatedAtDesc(tenantContext.tenantId().value()).stream()
                 .map(this::toDomain)
                 .toList();
     }
 
-    public SnapshotJob cancel(String snapshotId) {
+    public SnapshotJob cancel(String snapshotId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
         var flag = cancellations.get(snapshotId);
         if (flag != null)
             flag.set(true);
-        var job = java.util.Optional.ofNullable(findOwned(snapshotId))
+        var job = Optional.ofNullable(findOwned(snapshotId, tenantContext))
                 .map(this::toDomain)
                 .orElseThrow(() -> new NoSuchElementException("Snapshot not found: " + snapshotId));
         var cancelled = job.withCancelled();
-        persist(cancelled);
+        persist(cancelled, tenantContext);
         // A cancelled snapshot is terminal; release its in-memory state.
         remove(snapshotId);
         return cancelled;
@@ -133,19 +138,19 @@ public class SnapshotExecutor {
         tenantOf.remove(snapshotId);
     }
 
-    private void execute(TenantId tenantId, SnapshotJob job, PipelineDesign pipeline) {
-        // The request thread's ThreadLocal won't reach this virtual thread; set the
-        // tenant context so snapshot DB work is tenant-scoped. Carries a system
-        // identity so any background authz check resolves cleanly.
-        TenantContextHolder.set(TenantSupport.workerContext(tenantId));
+    private void execute(TenantContext tenantContext, SnapshotJob job, PipelineDesign pipeline) {
+        // DEEP FIX: TenantContext is threaded explicitly through every call;
+        // we do not set the ThreadLocal. See SyncOrchestrator.run() for the
+        // same pattern.
         try {
-            executeInner(job, pipeline);
+            executeInner(job, pipeline, tenantContext);
         } finally {
+            // Defensive cleanup of any stale ThreadLocal.
             TenantContextHolder.clear();
         }
     }
 
-    private void executeInner(SnapshotJob job, PipelineDesign pipeline) {
+    private void executeInner(SnapshotJob job, PipelineDesign pipeline, TenantContext tenantContext) {
         var timer = Timer.builder("syncflow.snapshot.duration")
                 .tag("pipeline", pipeline.id().value())
                 .register(meterRegistry);
@@ -173,7 +178,7 @@ public class SnapshotExecutor {
             }
 
             var progress = SnapshotProgress.starting(totalRows);
-            persist(job.withProgress(progress));
+            persist(job.withProgress(progress), tenantContext);
 
             for (var tm : pipeline.tableMappings()) {
                 if (isCancelled(job))
@@ -205,7 +210,7 @@ public class SnapshotExecutor {
                         writer.writeBatch(tm.destinationTable() != null
                                 ? tm.destinationTable()
                                 : tm.destinationCollection(),
-                                batch, destCols);
+                                destCols, batch);
                     }
 
                     rowsProcessed.addAndGet(batch.size());
@@ -214,15 +219,15 @@ public class SnapshotExecutor {
                     var updated = job.withProgress(new SnapshotProgress(
                             (int) batchesDone.get(), (int) totalBatches,
                             rowsProcessed.get(), totalRows, pct, 0));
-                    persist(updated);
-                    emit(job.getId().value(), updated);
+                    persist(updated, tenantContext);
+                    emit(job.getId().value(), updated, tenantContext);
 
                     meterRegistry.counter("syncflow.snapshot.rows",
                             "pipeline", pipeline.id().value()).increment(batch.size());
 
-                    // Checkpoint every 5 batches — captures the keyed cursor so a
+                    // Checkpoint every N batches (configurable) — captures the keyed cursor so a
                     // resume continues exactly at the next row (no OFFSET drift).
-                    if (batchesDone.get() % 5 == 0) {
+                    if (batchesDone.get() % runtime.getSnapshot().getCheckpointIntervalBatches() == 0) {
                         checkpointStore.save(new SnapshotCheckpoint(
                                 pipeline.id().value(), tm.sourceTable(),
                                 (int) batchesDone.get(), rowsProcessed.get(),
@@ -253,8 +258,8 @@ public class SnapshotExecutor {
                         batchesDone.get(), totalBatches, 0, 0,
                         job.getCreatedAt(), Instant.now(), elapsed / 1_000_000);
                 var completed = job.withCompleted(stats);
-                persist(completed);
-                emit(job.getId().value(), completed);
+                persist(completed, tenantContext);
+                emit(job.getId().value(), completed, tenantContext);
                 checkpointStore.deleteAll(pipeline.id().value());
                 // Terminal and durable; release worker state so the in-memory
                 // maps cannot grow unbounded across snapshots.
@@ -271,8 +276,8 @@ public class SnapshotExecutor {
             var error = new SnapshotError("SNAPSHOT_FAILED", e.getMessage(),
                     (int) batchesDone.get(), Instant.now());
             var failed = job.withFailed(List.of(error));
-            persist(failed);
-            emit(job.getId().value(), failed);
+            persist(failed, tenantContext);
+            emit(job.getId().value(), failed, tenantContext);
             remove(job.getId().value());
             meterRegistry.counter("syncflow.snapshot.errors",
                     "pipeline", pipeline.id().value()).increment();
@@ -280,9 +285,9 @@ public class SnapshotExecutor {
     }
 
     /** Live-status event emitted on every progress/state change for a snapshot. */
-    private void emit(String snapshotId, SnapshotJob job) {
+    private void emit(String snapshotId, SnapshotJob job, TenantContext tenantContext) {
         // Tenant-scoped SSE key (matching the tenantOf map) so streams don't cross.
-        var key = tenantOf.getOrDefault(snapshotId, "default") + ":" + snapshotId;
+        var key = tenantContext.tenantId().value() + ":" + snapshotId;
         broadcaster.emit(key, "snapshot-status", job);
     }
 
@@ -291,19 +296,19 @@ public class SnapshotExecutor {
         return flag != null && flag.get();
     }
 
-    private SnapshotJobEntity findOwned(String snapshotId) {
-        var tenant = TenantContextHolder.getTenantId().value();
+    private SnapshotJobEntity findOwned(String snapshotId, TenantContext tenantContext) {
+        var tenant = tenantContext.tenantId().value();
         return jobRepository.findById(snapshotId)
                 .filter(e -> tenant.equals(e.getTenantId()))
                 .orElse(null);
     }
 
     @Transactional
-    private void persist(SnapshotJob job) {
+    private void persist(SnapshotJob job, TenantContext tenantContext) {
         var entity = jobRepository.findById(job.getId().value())
                 .orElseGet(SnapshotJobEntity::new);
         entity.setId(job.getId().value());
-        entity.setTenantId(TenantSupport.tenantId());
+        entity.setTenantId(tenantContext.tenantId().value());
         entity.setPipelineId(job.getPipelineId());
         entity.setStatus(job.getStatus().name());
         entity.setPayload(json.toJson(job));
@@ -318,13 +323,13 @@ public class SnapshotExecutor {
 
     private ConnectorContext buildSourceContext(PipelineDesign pipeline) {
         var conn = connectionService.getWithDecryptedCredentials(pipeline.source().connectionId());
-        var config = toConfig(conn);
+        var config = ConnectionMapper.toConfig(conn);
         return new ConnectorContext(config, Map.of());
     }
 
     private ConnectionConfiguration buildDestConfig(PipelineDesign pipeline) {
         var conn = connectionService.getWithDecryptedCredentials(pipeline.destination().connectionId());
-        return toConfig(conn);
+        return ConnectionMapper.toConfig(conn);
     }
 
     private SnapshotCapableConnector resolveSourceConnector(PipelineDesign pipeline) {
@@ -345,12 +350,4 @@ public class SnapshotExecutor {
                 .orElseThrow(() -> new IllegalArgumentException("No writer for type: " + ct));
     }
 
-    private ConnectionConfiguration toConfig(Connection conn) {
-        var p = conn.getProperties();
-        var c = conn.getCredentials();
-        return new ConnectionConfiguration(
-                ConnectorTypeMapper.toCore(p.type()),
-                p.host(), p.port(), p.database(),
-                c.username(), c.password(), p.options());
-    }
 }

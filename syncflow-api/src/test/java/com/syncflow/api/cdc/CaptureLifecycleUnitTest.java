@@ -1,12 +1,17 @@
 package com.syncflow.api.cdc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syncflow.api.cdc.repository.ActiveCaptureRepository;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.kafka.KafkaCdcConsumer;
+import com.syncflow.api.lock.DistributedLockService;
 import com.syncflow.api.kafka.KafkaProperties;
 import com.syncflow.api.kafka.KafkaTopicProvisioner;
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.core.cdc.CaptureStatus;
+import com.syncflow.tenant.TenantContext;
+import com.syncflow.tenant.TenantContextHolder;
+import com.syncflow.tenant.TenantId;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.connection.ConnectionId;
 import com.syncflow.core.connection.ConnectionMetadata;
@@ -31,13 +36,16 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -67,6 +75,10 @@ class CaptureLifecycleUnitTest {
     private KafkaTopicProvisioner topicProvisioner;
     @Mock
     private KafkaCdcConsumer kafkaCdcConsumer;
+    @Mock
+    private ActiveCaptureRepository activeCaptureRepository;
+    @Mock
+    private DistributedLockService lockService;
 
     private CaptureLifecycle lifecycle;
 
@@ -74,8 +86,25 @@ class CaptureLifecycleUnitTest {
     void setUp() {
         lifecycle = new CaptureLifecycle(pipelineService, connectionService,
                 connectorRegistry, offsetStore, new SimpleMeterRegistry(),
-                new ObjectMapper(), Optional.of(kafkaProperties),
+                new ObjectMapper(), activeCaptureRepository, lockService,
+                Optional.of(kafkaProperties),
                 Optional.of(topicProvisioner), Optional.of(kafkaCdcConsumer));
+        // F13: withLock wraps doStart/doStop. Execute the action inline so the
+        // behavior-under-test (lock-protected critical section) is exercised.
+        // lenient: sub-tests that don't touch a lock would otherwise trip
+        // Mockito's strict-unnecessary-stubbing check.
+        Mockito.lenient()
+                .when(lockService.withLock(any(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    Supplier<?> action = inv.getArgument(3);
+                    return action.get();
+                });
+        // Provide a default tenant context so test calls that read
+        // TenantContextHolder.get() do not NPE in unit tests.
+        TenantContextHolder.set(
+                new TenantContext(new TenantId("00000000-0000-0000-0000-000000000000"),
+                        null, null, null, "test-user", Set.of(),
+                        Instant.now()));
     }
 
     // ── Test data helpers ────────────────────────────────────────────────────
@@ -107,7 +136,7 @@ class CaptureLifecycleUnitTest {
                 .thenReturn(Optional.of(cdcConnector));
         when(cdcConnector.validate(any(ConnectorContext.class)))
                 .thenReturn(ValidationResult.ok());
-        org.mockito.Mockito.lenient()
+        Mockito.lenient()
                 .when(cdcConnector.captureStatus()).thenReturn(CaptureStatus.INACTIVE);
         when(offsetStore.get(pipelineId)).thenReturn(Map.of());
         // Kafka disabled → bounded-queue path, no Kafka components started
@@ -123,21 +152,21 @@ class CaptureLifecycleUnitTest {
         @Test
         void returnsRunningStatusOnSuccess() {
             mockStartup("p-1");
-            var status = lifecycle.start("p-1", null);
+            var status = lifecycle.start("p-1", null, TenantContextHolder.get());
             assertEquals(CaptureStatus.RUNNING, status);
         }
 
         @Test
         void startsCdcOnConnector() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             verify(cdcConnector).startCDC(any(ConnectorContext.class), any(Consumer.class));
         }
 
         @Test
         void runsPreFlightValidation() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             verify(cdcConnector).validate(any(ConnectorContext.class));
         }
 
@@ -152,7 +181,8 @@ class CaptureLifecycleUnitTest {
             when(cdcConnector.validate(any()))
                     .thenReturn(ValidationResult.failed(List.of("wal_level not logical")));
 
-            assertThrows(IllegalStateException.class, () -> lifecycle.start("p-fail", null));
+            assertThrows(IllegalStateException.class,
+                    () -> lifecycle.start("p-fail", null, TenantContextHolder.get()));
             verify(cdcConnector, never()).startCDC(any(), any());
         }
 
@@ -164,7 +194,8 @@ class CaptureLifecycleUnitTest {
             when(connectionService.getWithDecryptedCredentials(any())).thenReturn(conn);
             when(connectorRegistry.get(ConnectorType.POSTGRESQL)).thenReturn(Optional.empty());
 
-            assertThrows(IllegalArgumentException.class, () -> lifecycle.start("p-no-cdc", null));
+            assertThrows(IllegalArgumentException.class,
+                    () -> lifecycle.start("p-no-cdc", null, TenantContextHolder.get()));
         }
 
         @Test
@@ -173,10 +204,10 @@ class CaptureLifecycleUnitTest {
             when(cdcConnector.captureStatus()).thenReturn(CaptureStatus.RUNNING);
 
             // First start
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             // Second start — should return immediately without re-starting
             when(cdcConnector.captureStatus()).thenReturn(CaptureStatus.RUNNING);
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
 
             // startCDC should only be called once
             verify(cdcConnector).startCDC(any(), any());
@@ -186,7 +217,7 @@ class CaptureLifecycleUnitTest {
         void loadsAndLogsSavedOffset() {
             mockStartup("p-1");
             when(offsetStore.get("p-1")).thenReturn(Map.of("lsn", "0/ABCDEF"));
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             verify(offsetStore).get("p-1");
         }
     }
@@ -200,11 +231,11 @@ class CaptureLifecycleUnitTest {
         @Test
         void stopsCdcAndSavesOffset() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
 
             when(cdcConnector.currentOffset())
                     .thenReturn(Map.of("lsn", "0/AABBCC", "connectorType", "POSTGRESQL"));
-            lifecycle.stop("p-1");
+            lifecycle.stop("p-1", TenantContextHolder.get());
 
             verify(cdcConnector).stopCDC();
             verify(offsetStore).save(eq("p-1"), any());
@@ -212,16 +243,16 @@ class CaptureLifecycleUnitTest {
 
         @Test
         void noopWhenNotStarted() {
-            lifecycle.stop("not-started");
+            lifecycle.stop("not-started", TenantContextHolder.get());
             verify(cdcConnector, never()).stopCDC();
         }
 
         @Test
         void doesNotSaveOffsetWhenEmpty() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             when(cdcConnector.currentOffset()).thenReturn(Map.of());
-            lifecycle.stop("p-1");
+            lifecycle.stop("p-1", TenantContextHolder.get());
             verify(offsetStore, never()).save(any(), any());
         }
     }
@@ -235,22 +266,22 @@ class CaptureLifecycleUnitTest {
         @Test
         void pauseDelegatestoConnector() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
-            lifecycle.pause("p-1");
+            lifecycle.start("p-1", null, TenantContextHolder.get());
+            lifecycle.pause("p-1", TenantContextHolder.get());
             verify(cdcConnector).pauseCDC();
         }
 
         @Test
         void resumeDelegatestoConnector() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
-            lifecycle.resume("p-1");
+            lifecycle.start("p-1", null, TenantContextHolder.get());
+            lifecycle.resume("p-1", TenantContextHolder.get());
             verify(cdcConnector).resumeCDC();
         }
 
         @Test
         void pauseNoopWhenNotStarted() {
-            lifecycle.pause("not-started");
+            lifecycle.pause("not-started", TenantContextHolder.get());
             verify(cdcConnector, never()).pauseCDC();
         }
     }
@@ -263,15 +294,16 @@ class CaptureLifecycleUnitTest {
 
         @Test
         void returnsInactiveWhenNotStarted() {
-            assertEquals(CaptureStatus.INACTIVE, lifecycle.status("unknown"));
+            assertEquals(CaptureStatus.INACTIVE,
+                    lifecycle.status("unknown", TenantContextHolder.get()));
         }
 
         @Test
         void returnsConnectorStatusWhenStarted() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             when(cdcConnector.captureStatus()).thenReturn(CaptureStatus.RUNNING);
-            assertEquals(CaptureStatus.RUNNING, lifecycle.status("p-1"));
+            assertEquals(CaptureStatus.RUNNING, lifecycle.status("p-1", TenantContextHolder.get()));
         }
     }
 
@@ -283,7 +315,7 @@ class CaptureLifecycleUnitTest {
 
         @Test
         void returnsZeroWhenNotStarted() {
-            assertEquals(0, lifecycle.eventCount("unknown"));
+            assertEquals(0, lifecycle.eventCount("unknown", TenantContextHolder.get()));
         }
 
         @Test
@@ -291,9 +323,9 @@ class CaptureLifecycleUnitTest {
             // Verifies fix #6 — no ClassCastException from blind cast to
             // InMemoryEventPublisher
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             // Should not throw ClassCastException
-            var count = lifecycle.eventCount("p-1");
+            var count = lifecycle.eventCount("p-1", TenantContextHolder.get());
             assertEquals(0, count); // BoundedQueueEventPublisher starts at 0
         }
     }
@@ -307,13 +339,14 @@ class CaptureLifecycleUnitTest {
         @Test
         void stopsAllActiveCaptures() {
             mockStartup("p-1");
-            lifecycle.start("p-1", null);
+            lifecycle.start("p-1", null, TenantContextHolder.get());
             when(cdcConnector.currentOffset()).thenReturn(Map.of());
 
-            lifecycle.shutdownAll();
+            lifecycle.shutdownAllGlobal(CaptureLifecycle.GlobalShutdown.CONFIRMED);
 
             verify(cdcConnector).stopCDC();
-            assertEquals(CaptureStatus.INACTIVE, lifecycle.status("p-1"));
+            assertEquals(CaptureStatus.INACTIVE,
+                    lifecycle.status("p-1", TenantContextHolder.get()));
         }
     }
 }

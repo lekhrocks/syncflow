@@ -9,6 +9,12 @@ import com.syncflow.core.cdc.EventMetadata;
 import com.syncflow.core.cdc.EventPayload;
 import com.syncflow.core.cdc.EventSource;
 import com.syncflow.core.cdc.OffsetInformation;
+import com.syncflow.core.model.ConnectionConfiguration;
+import com.syncflow.core.model.ConnectorType;
+import com.syncflow.core.spi.ConnectorContext;
+import com.syncflow.connector.kafka.KafkaConnector;
+import com.syncflow.tenant.TenantContext;
+import com.syncflow.tenant.TenantContextHolder;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -27,6 +33,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
@@ -34,6 +41,8 @@ import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -80,7 +89,7 @@ class KafkaIntegrationTest {
                     .until(() -> {
                         var rs = consumer.poll(Duration.ofMillis(200));
                         return rs.isEmpty() ? null : rs.records(topic).iterator().next();
-                    }, java.util.Objects::nonNull);
+                    }, Objects::nonNull);
 
             assertEquals(topic, record.topic());
             assertEquals("{\"id\":1}", record.key()); // PK map serialized as JSON
@@ -118,7 +127,7 @@ class KafkaIntegrationTest {
         // pre-create the topic so the consumer's subscribe pattern matches
         new KafkaTopicProvisioner(kafkaProperties).provisionTopics(PIPELINE, List.of(TABLE));
 
-        consumer.startConsuming(PIPELINE);
+        consumer.startConsuming(PIPELINE, TenantContextHolder.get());
         try {
             var publisher = new KafkaEventPublisher(PIPELINE, kafkaProperties, MAPPER,
                     new SimpleMeterRegistry());
@@ -128,7 +137,8 @@ class KafkaIntegrationTest {
 
             var captor = ArgumentCaptor.forClass(CDCEvent.class);
             verify(orchestrator, timeout(15_000).atLeast(1))
-                    .submitEvent(org.mockito.ArgumentMatchers.eq(PIPELINE), captor.capture());
+                    .submitEvent(eq(PIPELINE), captor.capture(),
+                            any(TenantContext.class));
             assertEquals("evt-bridge", captor.getValue().header().eventId());
         } finally {
             consumer.stopConsuming(PIPELINE);
@@ -137,11 +147,11 @@ class KafkaIntegrationTest {
 
     @Test
     void kafkaConnectorValidateAgainstLiveBroker() {
-        var connector = new com.syncflow.connector.kafka.KafkaConnector();
+        var connector = new KafkaConnector();
         var props = Map.of("bootstrap.servers", bootstrapServers);
-        var ctx = new com.syncflow.core.spi.ConnectorContext(
-                new com.syncflow.core.model.ConnectionConfiguration(
-                        com.syncflow.core.model.ConnectorType.KAFKA,
+        var ctx = new ConnectorContext(
+                new ConnectionConfiguration(
+                        ConnectorType.KAFKA,
                         "localhost", 9092, "kafka", "user", "pass", props),
                 Map.of());
         var result = connector.validate(ctx);

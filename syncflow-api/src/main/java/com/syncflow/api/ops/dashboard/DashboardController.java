@@ -10,6 +10,7 @@ import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.pipeline.PipelineDesign;
 import com.syncflow.core.registry.ConnectorRegistry;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,10 +53,11 @@ public class DashboardController {
 
     @GetMapping("/overview")
     public ResponseEntity<Map<String, Object>> overview() {
+        var tenantContext = TenantContextHolder.get();
         var pipelines = pipelineService.list();
         var connections = connectionService.list();
-        var syncJobs = syncOrchestrator.list();
-        var snapshots = snapshotExecutor.list();
+        var syncJobs = syncOrchestrator.list(tenantContext);
+        var snapshots = snapshotExecutor.list(tenantContext);
 
         return ResponseEntity.ok(new LinkedHashMap<>() {
 
@@ -129,9 +131,10 @@ public class DashboardController {
 
     @GetMapping("/jobs")
     public ResponseEntity<Map<String, Object>> jobs() {
+        var tenantContext = TenantContextHolder.get();
         return ResponseEntity.ok(Map.of(
-                "sync", syncOrchestrator.list().size(),
-                "snapshots", snapshotExecutor.list().size()));
+                "sync", syncOrchestrator.list(tenantContext).size(),
+                "snapshots", snapshotExecutor.list(tenantContext).size()));
     }
 
     @GetMapping("/metrics")
@@ -144,7 +147,8 @@ public class DashboardController {
 
     @GetMapping("/errors")
     public ResponseEntity<List<Object>> errors() {
-        var snapshotFailures = snapshotExecutor.list().stream()
+        var tenantContext = TenantContextHolder.get();
+        var snapshotFailures = snapshotExecutor.list(tenantContext).stream()
                 .filter(j -> j.getStatus().name().equals("FAILED"))
                 .map(j -> (Object) Map.of("type", "SNAPSHOT",
                         "id", j.getId().value(), "pipelineId", j.getPipelineId(),

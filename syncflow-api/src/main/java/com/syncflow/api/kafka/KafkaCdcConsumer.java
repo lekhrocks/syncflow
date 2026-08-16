@@ -3,6 +3,7 @@ package com.syncflow.api.kafka;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.cdc.CDCEvent;
+import com.syncflow.tenant.TenantContext;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -56,8 +57,16 @@ public class KafkaCdcConsumer {
     /**
      * Start consuming events for {@code pipelineId} from all topics matching
      * {@code {prefix}.{pipelineId}.*}.
+     *
+     * Note: {@code tenantContext} is retained by the consumer thread for the
+     * lifetime of the consumer (passes through {@link #pollLoop}). If a
+     * future change makes {@link com.syncflow.tenant.TenantContext} hold
+     * large claim objects (permissions, JWT claim blobs), the long-lived
+     * reference becomes a memory leak. Today the record is small (~200 bytes),
+     * so the trade-off is acceptable. Revisit if TenantContext grows.
      */
-    public void startConsuming(String pipelineId) {
+    public void startConsuming(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
         if (handles.containsKey(pipelineId)) {
             log.debug("Kafka consumer already running for pipeline={}", pipelineId);
             return;
@@ -69,7 +78,7 @@ public class KafkaCdcConsumer {
         consumer.subscribe(pattern);
 
         var running = new AtomicBoolean(true);
-        var thread = Thread.startVirtualThread(() -> pollLoop(pipelineId, consumer, running));
+        var thread = Thread.startVirtualThread(() -> pollLoop(pipelineId, consumer, running, tenantContext));
         handles.put(pipelineId, new ConsumerHandle(consumer, running, thread));
         log.info("Kafka consumer started for pipeline={} pattern={}", pipelineId, pattern);
     }
@@ -103,7 +112,8 @@ public class KafkaCdcConsumer {
 
     private void pollLoop(String pipelineId,
             KafkaConsumer<String, String> consumer,
-            AtomicBoolean running) {
+            AtomicBoolean running,
+            TenantContext tenantContext) {
         try {
             while (running.get()) {
                 var records = consumer.poll(POLL_TIMEOUT);
@@ -113,7 +123,9 @@ public class KafkaCdcConsumer {
                 for (var record : records) {
                     try {
                         var event = objectMapper.readValue(record.value(), CDCEvent.class);
-                        syncOrchestrator.submitEvent(pipelineId, event);
+                        // Kafka CDC consumer runs in its own thread; use the worker tenant context
+                        // from the request thread that started the capture.
+                        syncOrchestrator.submitEvent(pipelineId, event, tenantContext);
                         meterRegistry.counter("syncflow.kafka.consume.success",
                                 "pipeline", pipelineId,
                                 "topic", record.topic()).increment();

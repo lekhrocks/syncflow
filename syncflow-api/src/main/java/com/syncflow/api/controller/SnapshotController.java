@@ -36,26 +36,30 @@ public class SnapshotController {
     @PostMapping("/pipelines/{id}/snapshot")
     public ResponseEntity<SnapshotJob> start(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        var job = executor.start(id);
+        var tenantContext = TenantContextHolder.get();
+        var job = executor.start(id, tenantContext);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(job);
     }
 
     @GetMapping("/snapshots")
     public ResponseEntity<List<SnapshotJob>> list() {
         authz.require(ResourcePermission.EXECUTION_READ);
-        return ResponseEntity.ok(executor.list());
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(executor.list(tenantContext));
     }
 
     @GetMapping("/snapshots/{id}")
     public ResponseEntity<SnapshotJob> get(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        return ResponseEntity.ok(executor.get(id));
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(executor.get(id, tenantContext));
     }
 
     @GetMapping("/snapshots/{id}/progress")
     public ResponseEntity<SnapshotProgress> progress(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        var job = executor.get(id);
+        var tenantContext = TenantContextHolder.get();
+        var job = executor.get(id, tenantContext);
         return ResponseEntity.ok(job.getProgress());
     }
 
@@ -63,13 +67,14 @@ public class SnapshotController {
     @GetMapping(value = "/snapshots/{id}/events", produces = "text/event-stream")
     public SseEmitter snapshotEvents(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        var tenant = TenantContextHolder.getTenantId().value();
-        return broadcaster.subscribe(tenant + ":" + id);
+        var tenantContext = TenantContextHolder.get();
+        return broadcaster.subscribe(tenantContext.tenantId().value() + ":" + id);
     }
 
     @PostMapping("/snapshots/{id}/cancel")
     public ResponseEntity<SnapshotJob> cancel(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        return ResponseEntity.ok(executor.cancel(id));
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(executor.cancel(id, tenantContext));
     }
 }
