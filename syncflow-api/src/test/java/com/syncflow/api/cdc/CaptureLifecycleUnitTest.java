@@ -107,6 +107,12 @@ class CaptureLifecycleUnitTest {
                         Instant.now()));
     }
 
+    /** Mirrors CaptureLifecycle.tenantKey(tenantId, pipelineId). */
+    private static String tenantKeyOf(TenantContext ctx, String pipelineId) {
+        return (ctx != null ? ctx.tenantId().value() : "00000000-0000-0000-0000-000000000000")
+                + ":" + pipelineId;
+    }
+
     // ── Test data helpers ────────────────────────────────────────────────────
 
     private PipelineDesign pipeline(String pipelineId) {
@@ -138,7 +144,7 @@ class CaptureLifecycleUnitTest {
                 .thenReturn(ValidationResult.ok());
         Mockito.lenient()
                 .when(cdcConnector.captureStatus()).thenReturn(CaptureStatus.INACTIVE);
-        when(offsetStore.get(pipelineId)).thenReturn(Map.of());
+        when(offsetStore.get(tenantKeyOf(TenantContextHolder.get(), pipelineId))).thenReturn(Map.of());
         // Kafka disabled → bounded-queue path, no Kafka components started
         when(kafkaProperties.isEnabled()).thenReturn(false);
     }
@@ -216,9 +222,10 @@ class CaptureLifecycleUnitTest {
         @Test
         void loadsAndLogsSavedOffset() {
             mockStartup("p-1");
-            when(offsetStore.get("p-1")).thenReturn(Map.of("lsn", "0/ABCDEF"));
+            var key = tenantKeyOf(TenantContextHolder.get(), "p-1");
+            when(offsetStore.get(key)).thenReturn(Map.of("lsn", "0/ABCDEF"));
             lifecycle.start("p-1", null, TenantContextHolder.get());
-            verify(offsetStore).get("p-1");
+            verify(offsetStore).get(key);
         }
     }
 
@@ -238,7 +245,7 @@ class CaptureLifecycleUnitTest {
             lifecycle.stop("p-1", TenantContextHolder.get());
 
             verify(cdcConnector).stopCDC();
-            verify(offsetStore).save(eq("p-1"), any());
+            verify(offsetStore).save(eq(tenantKeyOf(TenantContextHolder.get(), "p-1")), any());
         }
 
         @Test

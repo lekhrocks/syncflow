@@ -152,16 +152,21 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
     }
 
     private void flushInserts() {
-        if (connection == null || buffer.isEmpty())
+        if (buffer.isEmpty() || !isConnected())
             return;
+        Connection conn = null;
         try {
+            // Borrow the connection. Pooled writers return it on close; the base
+            // writer's getConnection() is a persistent field, so closing it here
+            // would break later flushes — hence the borrow helper.
+            conn = borrowConnection();
             // Columns come from the sanitized value stored at writeBatch time,
             // not re-derived from row keys on flush (which would be unsanitized).
             var columns = currentColumns != null
                     ? currentColumns
                     : sanitizeIdentifiers(new ArrayList<>(buffer.getFirst().keySet()));
             var sql = currentInsertSql != null ? currentInsertSql : buildInsertSql(columns, currentTable);
-            try (var stmt = connection.prepareStatement(sql)) {
+            try (var stmt = conn.prepareStatement(sql)) {
                 for (var row : buffer) {
                     for (int i = 0; i < columns.size(); i++) {
                         stmt.setObject(i + 1, row.get(columns.get(i)));
@@ -176,15 +181,19 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
             currentInsertSql = null;
         } catch (SQLException e) {
             throw new RuntimeException("Batch write failed", e);
+        } finally {
+            returnConnection(conn);
         }
     }
 
     private void flushDeletes() {
-        if (connection == null || deleteBuffer.isEmpty())
+        if (deleteBuffer.isEmpty() || !isConnected())
             return;
+        Connection conn = null;
         try {
+            conn = borrowConnection();
             var sql = buildDeleteSql(currentTable, deleteColumns, deleteBuffer.size());
-            try (var stmt = connection.prepareStatement(sql)) {
+            try (var stmt = conn.prepareStatement(sql)) {
                 int idx = 1;
                 for (var pk : deleteBuffer) {
                     for (var col : deleteColumns) {
@@ -197,7 +206,27 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
             deleteColumns.clear();
         } catch (SQLException e) {
             throw new RuntimeException("Batch delete failed", e);
+        } finally {
+            returnConnection(conn);
         }
+    }
+
+    /**
+     * Borrow a connection for a flush. The base writer returns the persistent
+     * {@link #connection} field; pooled writers return a borrowed pool
+     * connection (see {@link #returnConnection}).
+     */
+    protected Connection borrowConnection() throws SQLException {
+        return connection;
+    }
+
+    /**
+     * Return a borrowed connection. Base writer: no-op (the persistent field is
+     * not closed until {@link #close()}). Pooled writers return the connection
+     * to the pool.
+     */
+    protected void returnConnection(Connection conn) {
+        // no-op for the persistent-field writer; pooled writers override.
     }
 
     /**

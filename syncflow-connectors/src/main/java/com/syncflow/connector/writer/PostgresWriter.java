@@ -8,7 +8,12 @@ import java.util.Properties;
 import java.util.stream.Collectors;
 
 @Component
-public class PostgresWriter extends JdbcBatchWriter {
+public class PostgresWriter extends PooledJdbcBatchWriter {
+
+    @Override
+    protected String poolType() {
+        return "postgresql";
+    }
 
     @Override
     protected String jdbcUrl(ConnectionConfiguration config) {

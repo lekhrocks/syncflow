@@ -299,7 +299,7 @@ public class SyncOrchestrator {
 
                 // EventIds buffered this batch. Marked as processed ONLY after the
                 // batch write to the destination succeeds (R1) — never before.
-                var pendingIds = new ArrayList<String>();
+                var pendingIds = new ArrayList<PendingId>();
 
                 // Tables we have already warned about (avoid log spam per event).
                 final Set<String> warnedTables = ConcurrentHashMap.newKeySet();
@@ -344,8 +344,14 @@ public class SyncOrchestrator {
                 // re-attempted on redelivery instead of being skipped as "done".
                 if (batchOk) {
                     for (var id : pendingIds) {
-                        idempotencyStore.markProcessed(id);
-                        retryEngine.success(id);
+                        // F14: atomic INSERT ... ON CONFLICT DO NOTHING. If a
+                        // concurrent worker already marked this event, the insert
+                        // is a no-op; retryEngine.success cleans up only when we
+                        // were the marking call.
+                        if (idempotencyStore.markProcessedIfAbsent(id.eventId(), tenantContext.tenantId().value(),
+                                id.pipelineId())) {
+                            retryEngine.success(id.eventId());
+                        }
                     }
                 }
 
@@ -390,10 +396,10 @@ public class SyncOrchestrator {
      * redelivered batch would be skipped by {@link #isProcessed} while the rows
      * never landed. See R1.
      *
-     * @return the eventId to mark as processed once the batch write succeeds, or
-     *         null if the event was skipped/dropped (never buffered).
+     * @return the event's id + pipeline to mark as processed once the batch write
+     *         succeeds, or null if the event was skipped/dropped (never buffered).
      */
-    private String processEvent(TenantContext tenantContext, String pipelineId, CDCEvent event,
+    private PendingId processEvent(TenantContext tenantContext, String pipelineId, CDCEvent event,
             TableMapping mapping, String destConnectionId,
             SyncStatisticsBuilder stats,
             Map<TableMapping, List<Map<String, Object>>> writeBuffer,
@@ -440,7 +446,7 @@ public class SyncOrchestrator {
                 writeBuffer.computeIfAbsent(mapping, k -> new ArrayList<>()).add(transformed);
             }
             stats.processedEvents.incrementAndGet();
-            return eventId;
+            return new PendingId(eventId, pipelineId);
         } catch (Exception e) {
             // single disposition for a failure. evaluate() already DLQs
             // terminal failures once (and records the retry state for transient
@@ -579,5 +585,9 @@ public class SyncOrchestrator {
                     failedEvents.get(), skippedEvents.get(),
                     retries.get(), dlqCount.get(), 0);
         }
+    }
+
+    /** Event awaiting idempotency-mark after a successful batch write. */
+    private record PendingId(String eventId, String pipelineId) {
     }
 }

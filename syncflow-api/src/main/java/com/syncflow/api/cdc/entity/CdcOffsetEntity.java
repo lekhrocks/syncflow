@@ -18,7 +18,7 @@ import java.time.Instant;
 public class CdcOffsetEntity {
 
     @Id
-    @Column(name = "pipeline_id", length = 36)
+    @Column(name = "pipeline_id", length = 128)
     private String pipelineId;
 
     @Column(name = "connector_type", nullable = false, length = 20)
