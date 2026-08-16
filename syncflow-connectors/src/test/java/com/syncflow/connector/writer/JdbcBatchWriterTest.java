@@ -153,16 +153,50 @@ class JdbcBatchWriterTest {
 
     @Test
     void concurrentDeletesFromDifferentTablesDoNotShareState() {
-        // Verifies that the deleteBuffer is reset between calls for different
-        // tables: previously a bug existed where a second table's PK columns
-        // were appended to the first table's DELETE statement. The fix is
-        // the explicit `if (deleteBuffer.isEmpty())` check before populating
-        // deleteColumns. We assert the state transitions directly.
+        // Verifies that the deleteBuffer scope moves with the table: a second
+        // table's PK columns must not be appended to the first table's DELETE
+        // statement. The flush-on-table-change guard in deleteBatch resets the
+        // pending scope on a table switch.
         var w = new TestWriter();
         w.deleteBatch("users", List.of("id"), List.of(Map.of("id", 1)));
-        w.deleteBatch("orders", List.of("oid"), List.of(Map.of("oid", 1)));
-        // No assertion needed beyond "no NPE" — the state is encapsulated.
-        // The contract is "no cross-table contamination of pk columns".
-        assertTrue(true, "compilation smoke");
+        assertEquals("users", w.pendingTable());
+        w.deleteBatch("users", List.of("id"), List.of(Map.of("id", 2)));
+        assertEquals("users", w.pendingTable());
+        w.deleteBatch("orders", List.of("oid", "region"),
+                List.of(Map.of("oid", 1, "region", "eu")));
+        assertEquals("orders", w.pendingTable(),
+                "cross-table delete switch moves the pending scope");
+    }
+
+    @Test
+    void writeBatchForDifferentTablesTracksLatestTable() {
+        // R8: after a cross-table writeBatch switch, the pending scope is the
+        // latest table — earlier tables' pending SQL is flushed/reset by the
+        // guard, so a later flush cannot mis-apply rows to a stale table.
+        var w = new TestWriter();
+        w.writeBatch("users", List.of("id"), List.of(Map.of("id", 1)));
+        assertEquals("users", w.pendingTable());
+        w.writeBatch("users", List.of("id"), List.of(Map.of("id", 2)));
+        assertEquals("users", w.pendingTable(), "same-table calls keep the table");
+        w.writeBatch("orders", List.of("oid"), List.of(Map.of("oid", 1)));
+        // After the switch the writer tracks 'orders' (the 'users' rows were
+        // flushed/reset); a flush now targets only orders.
+        assertEquals("orders", w.pendingTable(),
+                "cross-table switch must move the pending scope, not mix tables");
+    }
+
+    @Test
+    void upsertBatchSetsConflictTargetFromKeyColumns() {
+        // R3: upsertBatch must produce an ON CONFLICT statement keyed by the
+        // given PK columns (single and composite).
+        var w = new TestWriter();
+        var sql1 = w.upsertSqlPublic("users",
+                List.of("id", "email"), List.of("id"));
+        assertTrue(sql1.contains("ON CONFLICT (id)"), "single-PK upsert missing conflict target");
+        var sql2 = w.upsertSqlPublic("line_items",
+                List.of("order_id", "line_no", "qty"),
+                List.of("order_id", "line_no"));
+        assertTrue(sql2.contains("ON CONFLICT (order_id, line_no)"),
+                "composite-PK upsert missing conflict target");
     }
 }

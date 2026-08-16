@@ -297,6 +297,10 @@ public class SyncOrchestrator {
                 var writeBuffer = new HashMap<TableMapping, List<Map<String, Object>>>();
                 var deleteBuffer = new HashMap<TableMapping, List<Map<String, Object>>>();
 
+                // EventIds buffered this batch. Marked as processed ONLY after the
+                // batch write to the destination succeeds (R1) — never before.
+                var pendingIds = new ArrayList<String>();
+
                 // Tables we have already warned about (avoid log spam per event).
                 final Set<String> warnedTables = ConcurrentHashMap.newKeySet();
 
@@ -322,15 +326,28 @@ public class SyncOrchestrator {
                                 "table", unmappedTable).increment();
                         continue;
                     }
-                    processEvent(tenantContext, pipelineId, event, mapping, destConnectionId, statsBuilder,
-                            writeBuffer, deleteBuffer);
+                    var pending = processEvent(tenantContext, pipelineId, event, mapping, destConnectionId,
+                            statsBuilder, writeBuffer, deleteBuffer);
+                    if (pending != null) {
+                        pendingIds.add(pending);
+                    }
                     meterRegistry.counter("syncflow.sync.events.dispatched",
                             "pipeline", pipelineId,
                             "table", mapping.sourceTable()).increment();
                 }
 
                 // Flush the accumulated writes as one batched DB operation.
-                flushBatched(tenantContext, destConnectionId, writeBuffer, deleteBuffer);
+                var batchOk = flushBatched(tenantContext, destConnectionId, writeBuffer, deleteBuffer);
+
+                // mark processed only after the destination write SUCCEEDED.
+                // If the batch failed, the events stay un-marked and will be
+                // re-attempted on redelivery instead of being skipped as "done".
+                if (batchOk) {
+                    for (var id : pendingIds) {
+                        idempotencyStore.markProcessed(id);
+                        retryEngine.success(id);
+                    }
+                }
 
                 meterRegistry.gauge("syncflow.sync.queue.size", queue, BlockingQueue::size);
                 meterRegistry.counter("syncflow.sync.events.processed",
@@ -362,12 +379,21 @@ public class SyncOrchestrator {
     }
 
     /**
-     * Per-event processing: idempotency check, filter/transform, append the
-     * transformed row (or PK map for deletes) to a thread-local accumulator.
-     * The caller flushes the accumulator as a batched write so we make one
-     * DB call per N events instead of one per event.
+     * Per-event processing: filter/transform, append the transformed row (or PK
+     * map for deletes) to a per-batch accumulator. The caller flushes the
+     * accumulator as a batched write so we make one DB call per N events instead
+     * of one per event.
+     *
+     * Idempotency marking is deliberately NOT done here — the caller marks an
+     * event only after the batch write to the destination SUCCEEDS. Marking
+     * before the write would turn a batch failure into silent data loss: the
+     * redelivered batch would be skipped by {@link #isProcessed} while the rows
+     * never landed. See R1.
+     *
+     * @return the eventId to mark as processed once the batch write succeeds, or
+     *         null if the event was skipped/dropped (never buffered).
      */
-    private void processEvent(TenantContext tenantContext, String pipelineId, CDCEvent event,
+    private String processEvent(TenantContext tenantContext, String pipelineId, CDCEvent event,
             TableMapping mapping, String destConnectionId,
             SyncStatisticsBuilder stats,
             Map<TableMapping, List<Map<String, Object>>> writeBuffer,
@@ -376,7 +402,7 @@ public class SyncOrchestrator {
         var eventId = event.header().eventId();
         if (idempotencyStore.isProcessed(eventId)) {
             stats.skippedEvents.incrementAndGet();
-            return;
+            return null;
         }
         try {
             var payload = event.payload().after();
@@ -385,7 +411,7 @@ public class SyncOrchestrator {
             }
             if (payload == null) {
                 stats.skippedEvents.incrementAndGet();
-                return;
+                return null;
             }
             var pCtx = new ProcessingContext(null, mapping);
             var filter = new FilterProcessor();
@@ -393,40 +419,57 @@ public class SyncOrchestrator {
             var filtered = filter.process(payload, pCtx);
             if (filtered == null) {
                 stats.skippedEvents.incrementAndGet();
-                return;
+                return null;
             }
             var transformed = transform.process(filtered, pCtx);
 
             if (event.operation() == CDCOperation.DELETE) {
                 var pkMap = event.payload().primaryKeys();
+                // A delete whose PK columns cannot be identified is a real
+                // failure, not a silent skip — the destination would drift. Pass
+                // it through so it fails loudly instead of being dropped and
+                // marked processed.
                 if (pkMap != null && !pkMap.isEmpty()) {
                     deleteBuffer.computeIfAbsent(mapping, k -> new ArrayList<>()).add(pkMap);
+                } else {
+                    throw new IllegalStateException(
+                            "DELETE has no primary key columns; cannot identify the destination row for eventId="
+                                    + eventId);
                 }
             } else {
                 writeBuffer.computeIfAbsent(mapping, k -> new ArrayList<>()).add(transformed);
             }
-            idempotencyStore.markProcessed(eventId);
-            retryEngine.success(eventId);
             stats.processedEvents.incrementAndGet();
+            return eventId;
         } catch (Exception e) {
+            // single disposition for a failure. evaluate() already DLQs
+            // terminal failures once (and records the retry state for transient
+            // ones); do NOT add a second unconditional dlq.add here — that
+            // double-enqueued every failed event. The event is not marked
+            // processed, so if it is redelivered it will be re-attempted.
             var reason = FailureReason.permanentError(e.getMessage());
             retryEngine.evaluate(pipelineId, event, reason, tenantContext);
-            dlq.add(pipelineId, event, reason, 0, tenantContext);
             stats.failedEvents.incrementAndGet();
+            return null;
         }
     }
 
     /**
-     * Flush the per-batch write buffer: collect every buffered row and
-     * delete, dispatch as a single batched write to the destination router.
+     * Flush the per-batch write buffer: dispatch every buffered row and delete
+     * as a single batched write to the destination router.
+     *
+     * @return true if every table's write succeeded; false if any failed (the
+     *         caller then leaves the events un-marked so redelivery re-attempts
+     *         them — see R1).
      */
-    private void flushBatched(TenantContext tenantContext, String destConnectionId,
+    private boolean flushBatched(TenantContext tenantContext, String destConnectionId,
             Map<TableMapping, List<Map<String, Object>>> writeBuffer,
             Map<TableMapping, List<Map<String, Object>>> deleteBuffer) {
         // Union of all TableMappings in either buffer.
         var keys = new LinkedHashSet<TableMapping>();
         keys.addAll(writeBuffer.keySet());
         keys.addAll(deleteBuffer.keySet());
+        boolean allOk = true;
         for (var mapping : keys) {
             var rows = writeBuffer.getOrDefault(mapping, List.of());
             var deletes = deleteBuffer.getOrDefault(mapping, List.of());
@@ -449,28 +492,38 @@ public class SyncOrchestrator {
             if (!events.isEmpty()) {
                 var result = router.writeBatch(destConnectionId, events, destColumns);
                 if (!result.success()) {
-                    // Per-event retry/DLQ — for the batched path we can't tell
-                    // which event failed, so we DLQ them all with a generic
-                    // batch error. Acceptable trade-off until F14 lands.
-                    log.warn("Batched write failed for {} events; retrying individually", events.size());
+                    // on a batched failure we can't tell which event failed.
+                    // DLQ each once (RetryEngine.evaluate handles the terminal
+                    // path internally; do NOT double-enqueue). Leave the events
+                    // un-marked so redelivery re-attempts the whole batch.
+                    log.warn("Batched write failed for {} events: {}", events.size(), result.error());
+                    var reason = FailureReason.transientError(result.error());
                     for (var event : events) {
-                        var reason = FailureReason.transientError(result.error());
                         retryEngine.evaluate(event.source().table(), event, reason, tenantContext);
                     }
+                    allOk = false;
                 }
             }
         }
         writeBuffer.clear();
         deleteBuffer.clear();
+        return allOk;
     }
 
     /** Construct a minimal CDCEvent with just the fields the router reads. */
     private CDCEvent minimalEvent(TableMapping mapping, CDCOperation op,
             Map<String, Object> row, Map<String, Object> pkMap) {
+        // the router groups by event.source().table(), which must be the
+        // DESTINATION table name (the write target on the destination connection),
+        // not the source table. Column mapping routes source columns to
+        // destination columns; the table follows the same remap.
+        var destTable = mapping.destinationTable() != null
+                ? mapping.destinationTable()
+                : mapping.destinationCollection();
         return new CDCEvent(
                 new EventHeader(UUID.randomUUID().toString(),
-                        mapping.sourceTable(), "localhost", 0, 1, Map.of()),
-                new EventSource(mapping.sourceTable(), "", mapping.sourceTable(),
+                        destTable, "localhost", 0, 1, Map.of()),
+                new EventSource(destTable, "", destTable,
                         "postgresql"),
                 op,
                 new EventPayload(row == null ? Map.of() : null,

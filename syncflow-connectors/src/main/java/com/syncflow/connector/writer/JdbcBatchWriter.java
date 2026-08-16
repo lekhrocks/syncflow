@@ -25,6 +25,8 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
 
     private Connection connection;
     private String currentTable;
+    private List<String> currentColumns;
+    private List<String> currentUpsertKeys;
     private String currentInsertSql;
     private final List<Map<String, Object>> buffer = new ArrayList<>();
     private final List<Map<String, Object>> deleteBuffer = new ArrayList<>();
@@ -64,11 +66,53 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
             return;
         var safeTable = sanitizeIdentifier(table);
         var safeColumns = sanitizeIdentifiers(columns);
+        // R8: guard against buffer corruption. If the caller issues writeBatch
+        // for table A then table B before flushing, the shared buffer would mix
+        // A's rows with B's SQL. Flush any prior buffered rows first so each
+        // writeBatch call is self-contained with its own table/columns.
+        // The flush is connection-null-safe: with no open connection the buffer
+        // is reset rather than left to leak across the table boundary.
+        if (!buffer.isEmpty()) {
+            if (currentTable == null || !currentTable.equals(safeTable)
+                    || currentColumns == null || !currentColumns.equals(safeColumns)) {
+                flushInserts();
+                if (!buffer.isEmpty())
+                    buffer.clear();
+            }
+        }
         currentTable = safeTable;
-        currentInsertSql = buildInsertSql(safeColumns, safeTable);
+        currentColumns = safeColumns;
+        currentInsertSql = null; // rebuilt on flush from currentTable/currentColumns
         buffer.addAll(rows);
         if (buffer.size() >= 1000) {
-            flush();
+            flushInserts();
+        }
+    }
+
+    @Override
+    public void upsertBatch(String table, List<String> columns, List<Map<String, Object>> rows,
+            List<String> keyColumns) {
+        if (rows.isEmpty())
+            return;
+        var safeTable = sanitizeIdentifier(table);
+        var safeColumns = sanitizeIdentifiers(columns);
+        var safeKeys = sanitizeIdentifiers(keyColumns);
+        if (!buffer.isEmpty()) {
+            if (currentTable == null || !currentTable.equals(safeTable)
+                    || currentUpsertKeys == null || !currentUpsertKeys.equals(safeKeys)) {
+                // Different table or key columns than what's buffered — flush first.
+                flushInserts();
+                if (!buffer.isEmpty())
+                    buffer.clear();
+            }
+        }
+        currentTable = safeTable;
+        currentColumns = safeColumns;
+        currentUpsertKeys = safeKeys;
+        currentInsertSql = upsertSql(safeTable, safeColumns, safeKeys);
+        buffer.addAll(rows);
+        if (buffer.size() >= 1000) {
+            flushInserts();
         }
     }
 
@@ -78,11 +122,19 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
             return;
         var safeTable = sanitizeIdentifier(table);
         var safePkColumns = sanitizeIdentifiers(pkColumns);
-        currentTable = safeTable;
-        if (deleteBuffer.isEmpty()) {
-            deleteColumns.clear();
-            deleteColumns.addAll(safePkColumns);
+        // R8: deletes must not share a buffer across tables. Flush a prior
+        // delete batch when the table or PK columns differ. Connection-null-safe.
+        if (!deleteBuffer.isEmpty()) {
+            if (currentTable == null || !currentTable.equals(safeTable)
+                    || !deleteColumns.equals(safePkColumns)) {
+                flushDeletes();
+                if (!deleteBuffer.isEmpty())
+                    deleteBuffer.clear();
+            }
         }
+        currentTable = safeTable;
+        deleteColumns.clear();
+        deleteColumns.addAll(safePkColumns);
         deleteBuffer.addAll(pks);
         if (deleteBuffer.size() >= 1000) {
             flushDeletes();
@@ -103,10 +155,11 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
         if (connection == null || buffer.isEmpty())
             return;
         try {
-            var columns = new ArrayList<>(buffer.getFirst().keySet());
-            // Keys come from event payloads, but they're matched against
-            // sanitized column names so the path is safe.
-            sanitizeIdentifiers(columns);
+            // Columns come from the sanitized value stored at writeBatch time,
+            // not re-derived from row keys on flush (which would be unsanitized).
+            var columns = currentColumns != null
+                    ? currentColumns
+                    : sanitizeIdentifiers(new ArrayList<>(buffer.getFirst().keySet()));
             var sql = currentInsertSql != null ? currentInsertSql : buildInsertSql(columns, currentTable);
             try (var stmt = connection.prepareStatement(sql)) {
                 for (var row : buffer) {
@@ -118,6 +171,9 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
                 stmt.executeBatch();
             }
             buffer.clear();
+            currentColumns = null;
+            currentUpsertKeys = null;
+            currentInsertSql = null;
         } catch (SQLException e) {
             throw new RuntimeException("Batch write failed", e);
         }
@@ -200,6 +256,13 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
     /** Borrow the underlying connection. Pooled writers override this. */
     public Connection getConnection() throws SQLException {
         return connection;
+    }
+
+    /**
+     * The table currently tracked as pending (or null). Package-private for tests.
+     */
+    String pendingTable() {
+        return currentTable;
     }
 
     private String buildInsertSql(List<String> columns, String table) {

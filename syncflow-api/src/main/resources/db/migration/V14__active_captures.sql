@@ -1,8 +1,9 @@
 -- Active CDC captures: durable record replacing the in-memory ConcurrentHashMap
 -- so capture state survives pod restarts and is shared across replicas.
 -- Keyed by (tenant_id, pipeline_id) so tenants cannot collide.
+-- id = tenantId(36) + ":" + pipelineId(36) = 73 chars, hence VARCHAR(128) not 64.
 CREATE TABLE IF NOT EXISTS active_captures (
-    id           VARCHAR(64) PRIMARY KEY,  -- composite: tenantId + ":" + pipelineId
+    id           VARCHAR(128) PRIMARY KEY,
     tenant_id    VARCHAR(64) NOT NULL,
     pipeline_id  VARCHAR(64) NOT NULL,
     status       VARCHAR(32) NOT NULL,

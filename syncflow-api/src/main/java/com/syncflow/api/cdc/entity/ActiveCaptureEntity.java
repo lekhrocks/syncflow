@@ -29,8 +29,8 @@ import java.time.Instant;
 public class ActiveCaptureEntity {
 
     @Id
-    @Column(length = 64)
-    private String id; // composite: tenantId + ":" + pipelineId
+    @Column(length = 128)
+    private String id; // composite: tenantId + ":" + pipelineId (73 chars)
 
     @Column(name = "tenant_id", nullable = false, length = 64)
     private String tenantId;

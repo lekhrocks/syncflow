@@ -66,6 +66,12 @@ public class DestinationRouter {
                         if (event.payload().after() != null) {
                             upserts.computeIfAbsent(tableName, t -> new ArrayList<>())
                                     .add(event.payload().after());
+                            // Key columns for the upsert conflict target come from
+                            // the event's primary keys (both INSERT and UPDATE carry them).
+                            var pk = event.payload().primaryKeys();
+                            if (pk != null && !pk.isEmpty()) {
+                                pkColumnsByTable.putIfAbsent(tableName, new ArrayList<>(pk.keySet()));
+                            }
                         }
                     }
                     case DELETE -> {
@@ -80,7 +86,15 @@ public class DestinationRouter {
             }
             for (var entry : upserts.entrySet()) {
                 if (!entry.getValue().isEmpty()) {
-                    writer.writeBatch(entry.getKey(), destColumns, entry.getValue());
+                    var keyCols = pkColumnsByTable.get(entry.getKey());
+                    // use UPSERT (ON CONFLICT) when the key columns are known, so a
+                    // re-insert after an UPDATE on an existing PK doesn't fail with a
+                    // duplicate-key error. Without a key, fall back to a plain insert.
+                    if (keyCols != null && !keyCols.isEmpty()) {
+                        writer.upsertBatch(entry.getKey(), destColumns, entry.getValue(), keyCols);
+                    } else {
+                        writer.writeBatch(entry.getKey(), destColumns, entry.getValue());
+                    }
                 }
             }
             for (var entry : deletes.entrySet()) {

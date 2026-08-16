@@ -21,6 +21,7 @@ import com.syncflow.core.spi.CdcCapableConnector;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.tenant.TenantContext;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -257,6 +258,16 @@ public class CaptureLifecycle {
         activeCaptures.values().forEach(this::shutdownOne);
         activeCaptures.clear();
         log.warn("All CDC captures shut down globally ({} captures)", activeCaptures.size());
+    }
+
+    /**
+     * stop all CDC captures on JVM shutdown so Debezium connectors stop,
+     * publishers flush/close, and offsets are persisted before exit. Without
+     * this, a pod termination left connections open and position unpersisted.
+     */
+    @PreDestroy
+    public void onShutdown() {
+        shutdownAllGlobal(GlobalShutdown.CONFIRMED);
     }
 
     private void shutdownOne(CaptureEntry entry) {
