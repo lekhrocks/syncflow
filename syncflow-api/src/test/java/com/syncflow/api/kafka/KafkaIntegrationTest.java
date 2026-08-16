@@ -15,10 +15,12 @@ import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.connector.kafka.KafkaConnector;
 import com.syncflow.tenant.TenantContext;
 import com.syncflow.tenant.TenantContextHolder;
+import com.syncflow.tenant.TenantId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -68,6 +70,16 @@ class KafkaIntegrationTest {
         bootstrapServers = KAFKA.getBootstrapServers();
         kafkaProperties = new KafkaProperties();
         kafkaProperties.setBootstrapServers(bootstrapServers);
+        // The consumer bridge requires a non-null tenant context (C2 guard in
+        // KafkaCdcConsumer.startConsuming). Mirror the request-thread setup.
+        TenantContextHolder.set(new TenantContext(
+                new TenantId("00000000-0000-0000-0000-000000000000"),
+                null, null, null, "test-user", java.util.Set.of(), java.time.Instant.now()));
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContextHolder.clear();
     }
 
     @Test
