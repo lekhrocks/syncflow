@@ -5,6 +5,7 @@ import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.api.sync.DeadLetterQueue;
 import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.registry.ConnectorRegistry;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -101,8 +102,9 @@ public class DiagnosticsController {
 
     @GetMapping("/executions")
     public ResponseEntity<Map<String, Object>> executions() {
+        var tenantContext = TenantContextHolder.get();
         return ResponseEntity.ok(Map.of(
-                "syncJobs", syncOrchestrator.list().size(),
+                "syncJobs", syncOrchestrator.list(tenantContext).size(),
                 "dlqSize", dlq.count(),
                 "activeCaptures", 0));
     }

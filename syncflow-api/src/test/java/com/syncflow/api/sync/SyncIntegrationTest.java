@@ -6,6 +6,9 @@ import com.syncflow.core.connection.ConnectionType;
 import com.syncflow.core.connection.Credentials;
 import com.syncflow.core.sync.FailureReason;
 import com.syncflow.api.config.AbstractIntegrationTest;
+import com.syncflow.tenant.TenantContext;
+import com.syncflow.tenant.TenantContextHolder;
+import com.syncflow.tenant.TenantId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,7 +20,9 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 
+import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -58,6 +63,13 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
                 postgres.getHost(), postgres.getMappedPort(5432), "synctest", Map.of());
         var creds = new Credentials("testuser", "testpass");
         pgConnectionId = connectionService.create("sync-test-pg", props, creds).getId().value();
+        // Provide a default tenant context so orchestrators that take TenantContext
+        // do not NPE in integration tests.
+        TenantContextHolder.set(
+                new TenantContext(
+                        new TenantId("00000000-0000-0000-0000-000000000000"),
+                        null, null, null, "test-user", Set.of(),
+                        Instant.now()));
     }
 
     @AfterEach
@@ -67,6 +79,7 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
         // JPA-backed DLQ persists across tests; clear so count/list assertions
         // in DLQ tests see only the events each test adds.
         dlq.clearAll();
+        TenantContextHolder.clear();
     }
 
     @Nested
@@ -85,8 +98,9 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("POST /dlq/{id}/replay removes event")
         void replayDlq() {
-            dlq.add("p-1", null, FailureReason.permanentError("test"), 3);
-            var events = dlq.list("p-1");
+            dlq.add("p-1", null, FailureReason.permanentError("test"), 3,
+                    TenantContextHolder.get());
+            var events = dlq.list("p-1", TenantContextHolder.get());
             if (!events.isEmpty()) {
                 given()
                         .when().post("/api/dlq/{id}/replay", events.getFirst().id())
@@ -98,8 +112,9 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("DELETE /dlq/{id} removes event")
         void deleteDlq() {
-            dlq.add("p-1", null, FailureReason.permanentError("test-del"), 2);
-            var events = dlq.list("p-1");
+            dlq.add("p-1", null, FailureReason.permanentError("test-del"), 2,
+                    TenantContextHolder.get());
+            var events = dlq.list("p-1", TenantContextHolder.get());
             if (!events.isEmpty()) {
                 given()
                         .header("Authorization", "Bearer " + adminToken("default"))
@@ -117,8 +132,9 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("DLQ stores and retrieves failed events")
         void storeAndRetrieve() {
-            dlq.add("p-1", null, FailureReason.permanentError("connection lost"), 3);
-            var events = dlq.list("p-1");
+            dlq.add("p-1", null, FailureReason.permanentError("connection lost"), 3,
+                    TenantContextHolder.get());
+            var events = dlq.list("p-1", TenantContextHolder.get());
             assertFalse(events.isEmpty());
             assertEquals("connection lost", events.getFirst().reason().message());
         }
@@ -126,25 +142,28 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("DLQ lists events filtered by pipeline")
         void listFilteredByPipeline() {
-            dlq.add("p-1", null, FailureReason.permanentError("err1"), 1);
-            dlq.add("p-2", null, FailureReason.permanentError("err2"), 1);
-            assertEquals(1, dlq.list("p-1").size());
+            dlq.add("p-1", null, FailureReason.permanentError("err1"), 1,
+                    TenantContextHolder.get());
+            dlq.add("p-2", null, FailureReason.permanentError("err2"), 1,
+                    TenantContextHolder.get());
+            assertEquals(1, dlq.list("p-1", TenantContextHolder.get()).size());
         }
 
         @Test
         @DisplayName("DLQ replay keeps the record and bumps replay count")
         void replayRetains() {
-            dlq.add("p-1", null, FailureReason.permanentError("replay"), 2);
-            var events = dlq.list("p-1");
+            dlq.add("p-1", null, FailureReason.permanentError("replay"), 2,
+                    TenantContextHolder.get());
+            var events = dlq.list("p-1", TenantContextHolder.get());
             var id = events.getFirst().id();
             dlq.replay(id);
             // Replay marks the event and increments replayCount; it does not delete it,
             // so the audit trail (replayedAt, replayCount) is preserved.
-            var after = dlq.get(id);
+            var after = dlq.get(id, TenantContextHolder.get());
             assertNotNull(after);
             assertEquals(1, after.replayCount());
             dlq.replay(id);
-            assertEquals(2, dlq.get(id).replayCount());
+            assertEquals(2, dlq.get(id, TenantContextHolder.get()).replayCount());
         }
     }
 

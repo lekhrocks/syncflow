@@ -1,7 +1,9 @@
 package com.syncflow.api.sync;
 
+import com.syncflow.api.config.RuntimeProperties;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.sync.FailureReason;
+import com.syncflow.tenant.TenantContext;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
@@ -13,24 +15,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class RetryEngine {
 
-    private static final int MAX_RETRIES = 3;
-    private static final long BASE_DELAY_MS = 1000;
-
     private final Map<String, RetryState> retries = new ConcurrentHashMap<>();
     private final DeadLetterQueue dlq;
     private final MeterRegistry meterRegistry;
+    private final RuntimeProperties runtime;
 
-    public RetryEngine(DeadLetterQueue dlq, MeterRegistry meterRegistry) {
+    public RetryEngine(DeadLetterQueue dlq, MeterRegistry meterRegistry, RuntimeProperties runtime) {
         this.dlq = dlq;
         this.meterRegistry = meterRegistry;
+        this.runtime = runtime;
     }
 
-    public RetryDecision evaluate(String pipelineId, CDCEvent event, FailureReason reason) {
+    public RetryDecision evaluate(String pipelineId, CDCEvent event, FailureReason reason,
+            TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
         var key = event.header().eventId();
         var state = retries.computeIfAbsent(key, k -> new RetryState());
 
-        if (!reason.retryable() || state.count.get() >= MAX_RETRIES) {
-            dlq.add(pipelineId, event, reason, state.count.get());
+        if (!reason.retryable() || state.count.get() >= runtime.getRetry().getMaxAttempts()) {
+            dlq.add(pipelineId, event, reason, state.count.get(), tenantContext);
             retries.remove(key);
             meterRegistry.counter("syncflow.sync.dlq.added",
                     "pipeline", pipelineId).increment();
@@ -38,7 +41,8 @@ public class RetryEngine {
         }
 
         state.count.incrementAndGet();
-        var delay = Duration.ofMillis(BASE_DELAY_MS * (1L << (state.count.get() - 1)));
+        long baseMs = runtime.getRetry().getBaseDelay().toMillis();
+        var delay = Duration.ofMillis(baseMs * (1L << (state.count.get() - 1)));
         meterRegistry.counter("syncflow.sync.retries",
                 "pipeline", pipelineId).increment();
         return new RetryDecision(true, delay);

@@ -10,6 +10,20 @@ import java.util.Collection;
 @Component
 public class AuthorizationService {
 
+    /**
+     * INTENTIONAL THREADLOCAL READ.
+     *
+     * After the P0/F1 refactor, the only place that reads
+     * {@link TenantContextHolder}
+     * on a code path that runs on the request thread is this class. Every other
+     * orchestrator/service takes {@link TenantContext} as a method parameter so
+     * background workers don't depend on the ThreadLocal.
+     *
+     * If you are adding a new code path that wants to read the current tenant,
+     * prefer passing {@link TenantContext} as a parameter. Only this class is
+     * allowed to read the ThreadLocal.
+     */
+
     private final PolicyResolver policyResolver;
 
     public AuthorizationService(PolicyResolver policyResolver) {

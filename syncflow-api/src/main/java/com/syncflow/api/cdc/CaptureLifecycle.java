@@ -1,26 +1,33 @@
 package com.syncflow.api.cdc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syncflow.api.cdc.entity.ActiveCaptureEntity;
+import com.syncflow.api.cdc.repository.ActiveCaptureRepository;
+import com.syncflow.api.connection.ConnectionMapper;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.kafka.KafkaCdcConsumer;
 import com.syncflow.api.kafka.KafkaEventPublisher;
 import com.syncflow.api.kafka.KafkaProperties;
 import com.syncflow.api.kafka.KafkaTopicProvisioner;
+import com.syncflow.api.lock.DistributedLockService;
 import com.syncflow.api.metadata.ConnectorTypeMapper;
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.core.cdc.CaptureStatus;
 import com.syncflow.core.cdc.publisher.BoundedQueueEventPublisher;
 import com.syncflow.core.cdc.publisher.EventPublisher;
-import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.pipeline.mapping.TableMapping;
 import com.syncflow.core.registry.ConnectorRegistry;
 import com.syncflow.core.spi.CdcCapableConnector;
 import com.syncflow.core.spi.ConnectorContext;
+import com.syncflow.tenant.TenantContext;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,13 +44,23 @@ public class CaptureLifecycle {
     private final OffsetStore offsetStore;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
+    private final ActiveCaptureRepository activeCaptureRepo;
+    private final DistributedLockService lockService;
 
     // Optional Kafka components — only present when syncflow.kafka.enabled=true
     private final Optional<KafkaProperties> kafkaProperties;
     private final Optional<KafkaTopicProvisioner> topicProvisioner;
     private final Optional<KafkaCdcConsumer> kafkaCdcConsumer;
 
+    // Fast-path in-memory cache of active captures; the durable state lives
+    // in active_captures table. Reads (status, eventCount) go through the
+    // cache; writes round-trip to Postgres via the repository. This keeps
+    // request latency low for the hot path without losing state on restart.
     private final Map<String, CaptureEntry> activeCaptures = new ConcurrentHashMap<>();
+
+    private static String tenantKey(String tenantId, String pipelineId) {
+        return tenantId + ":" + pipelineId;
+    }
 
     public CaptureLifecycle(PipelineDesignerService pipelineService,
             ConnectionService connectionService,
@@ -51,6 +68,8 @@ public class CaptureLifecycle {
             OffsetStore offsetStore,
             MeterRegistry meterRegistry,
             ObjectMapper objectMapper,
+            ActiveCaptureRepository activeCaptureRepo,
+            DistributedLockService lockService,
             Optional<KafkaProperties> kafkaProperties,
             Optional<KafkaTopicProvisioner> topicProvisioner,
             Optional<KafkaCdcConsumer> kafkaCdcConsumer) {
@@ -60,13 +79,27 @@ public class CaptureLifecycle {
         this.offsetStore = offsetStore;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
+        this.activeCaptureRepo = activeCaptureRepo;
+        this.lockService = lockService;
         this.kafkaProperties = kafkaProperties;
         this.topicProvisioner = topicProvisioner;
         this.kafkaCdcConsumer = kafkaCdcConsumer;
     }
 
-    public CaptureStatus start(String pipelineId, String tableOrCollection) {
-        var existing = activeCaptures.get(pipelineId);
+    public CaptureStatus start(String pipelineId, String tableOrCollection, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        // Distributed lock prevents two pods from starting CDC for the same
+        // pipeline concurrently (which would create duplicate slots / races).
+        return lockService.withLock("capture:" + tenantKey(tenantContext.tenantId().value(), pipelineId),
+                tenantContext,
+                Duration.ofSeconds(30),
+                () -> doStart(pipelineId, tableOrCollection, tenantContext));
+    }
+
+    private CaptureStatus doStart(String pipelineId, String tableOrCollection, TenantContext tenantContext) {
+        // Include tenant in key so multiple tenants can have pipelines with same ID
+        var key = tenantKey(tenantContext.tenantId().value(), pipelineId);
+        var existing = activeCaptures.get(key);
         if (existing != null && existing.connector().captureStatus() != CaptureStatus.INACTIVE) {
             return existing.connector().captureStatus();
         }
@@ -79,7 +112,7 @@ public class CaptureLifecycle {
                 .map(c -> (CdcCapableConnector) c)
                 .orElseThrow(() -> new IllegalArgumentException("No CDC connector for type: " + ct));
 
-        var config = toConfig(conn);
+        var config = ConnectionMapper.toConfig(conn);
         // Key the Debezium offset file (and any connector state) per pipeline so
         // multiple pipelines on the same database don't share/corrupt position.
         var ctx = new ConnectorContext(config, Map.of("pipelineId", pipelineId));
@@ -105,7 +138,7 @@ public class CaptureLifecycle {
         });
 
         // task #7: start Kafka consumer bridge when Kafka is enabled
-        kafkaCdcConsumer.ifPresent(c -> c.startConsuming(pipelineId));
+        kafkaCdcConsumer.ifPresent(c -> c.startConsuming(pipelineId, tenantContext));
 
         var savedOffset = offsetStore.get(pipelineId);
         if (!savedOffset.isEmpty()) {
@@ -114,19 +147,26 @@ public class CaptureLifecycle {
             log.info("CDC starting fresh (no saved offset) for pipeline={}", pipelineId);
         }
 
-        activeCaptures.put(pipelineId, new CaptureEntry(connector, publisher, pipelineId));
+        activeCaptures.put(key, new CaptureEntry(connector, publisher, pipelineId));
+        // Persist active capture to DB so a pod restart can resume.
+        persistActiveCapture(key, tenantContext.tenantId().value(), pipelineId, CaptureStatus.RUNNING, Map.of());
         log.info("CDC started for pipeline={} connectorType={} kafka={}",
                 pipelineId, ct, kafkaProperties.map(KafkaProperties::isEnabled).orElse(false));
         return CaptureStatus.RUNNING;
     }
 
-    public void stop(String pipelineId) {
-        var entry = activeCaptures.get(pipelineId);
+    public void stop(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        var key = tenantKey(tenantContext.tenantId().value(), pipelineId);
+        var entry = activeCaptures.get(key);
         if (entry != null) {
             if (entry.connector() != null) {
                 var offset = entry.connector().currentOffset();
                 if (!offset.isEmpty()) {
                     offsetStore.save(pipelineId, offset);
+                    // Persist the final offset to the durable capture record.
+                    persistActiveCapture(key, tenantContext.tenantId().value(), pipelineId,
+                            CaptureStatus.INACTIVE, offset);
                     log.info("CDC offset saved for pipeline={} offset={}", pipelineId, offset);
                 }
                 entry.connector().stopCDC();
@@ -142,60 +182,115 @@ public class CaptureLifecycle {
             }
             // stop Kafka consumer
             kafkaCdcConsumer.ifPresent(c -> c.stopConsuming(pipelineId));
-            activeCaptures.remove(pipelineId);
+            activeCaptures.remove(key);
         }
     }
 
-    public void pause(String pipelineId) {
-        var entry = activeCaptures.get(pipelineId);
+    public void pause(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        var key = tenantKey(tenantContext.tenantId().value(), pipelineId);
+        var entry = activeCaptures.get(key);
         if (entry != null && entry.connector() != null) {
             entry.connector().pauseCDC();
             log.debug("CDC paused for pipeline={}", pipelineId);
         }
     }
 
-    public void resume(String pipelineId) {
-        var entry = activeCaptures.get(pipelineId);
+    public void resume(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        var key = tenantKey(tenantContext.tenantId().value(), pipelineId);
+        var entry = activeCaptures.get(key);
         if (entry != null && entry.connector() != null) {
             entry.connector().resumeCDC();
             log.debug("CDC resumed for pipeline={}", pipelineId);
         }
     }
 
-    public CaptureStatus status(String pipelineId) {
-        var entry = activeCaptures.get(pipelineId);
+    public CaptureStatus status(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        var key = tenantKey(tenantContext.tenantId().value(), pipelineId);
+        var entry = activeCaptures.get(key);
         if (entry == null)
             return CaptureStatus.INACTIVE;
         return entry.connector() != null ? entry.connector().captureStatus() : CaptureStatus.INACTIVE;
     }
 
-    public long eventCount(String pipelineId) {
-        var entry = activeCaptures.get(pipelineId);
+    public long eventCount(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        var key = tenantKey(tenantContext.tenantId().value(), pipelineId);
+        var entry = activeCaptures.get(key);
         if (entry == null || entry.publisher() == null)
             return 0;
         return entry.publisher().count();
     }
 
-    public void shutdownAll() {
-        activeCaptures.values().forEach(e -> {
-            if (e.connector() != null) {
-                var offset = e.connector().currentOffset();
-                if (!offset.isEmpty())
-                    offsetStore.save(e.pipelineId(), offset);
-                e.connector().stopCDC();
-            }
-            try {
-                e.publisher().flush();
-            } catch (Exception ignored) {
-            }
-            try {
-                e.publisher().close();
-            } catch (Exception ignored) {
-            }
-            kafkaCdcConsumer.ifPresent(c -> c.stopConsuming(e.pipelineId()));
-        });
+    /**
+     * Graceful shutdown for a single tenant. Stops every active CDC capture
+     * belonging to {@code tenantContext}, persists the offset, and flushes
+     * the publisher. Use this on tenant-scope lifecycle events.
+     */
+    public void shutdownForTenant(TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        var tenantId = tenantContext.tenantId().value();
+        var it = activeCaptures.entrySet().iterator();
+        while (it.hasNext()) {
+            var entry = it.next();
+            // activeCaptures key is "tenantId:pipelineId" — only close ours.
+            if (!entry.getKey().startsWith(tenantId + ":"))
+                continue;
+            shutdownOne(entry.getValue());
+            it.remove();
+        }
+        log.info("CDC captures shut down for tenant={}", tenantId);
+    }
+
+    /**
+     * Global shutdown (SIGTERM, JVM exit). Closes ALL captures regardless of
+     * tenant — this is operator-only and should never run from a request thread.
+     * Requires explicit confirmation via the {@link #CONFIRM_GLOBAL_SHUTDOWN}
+     * argument so callers cannot invoke it by accident.
+     */
+    public void shutdownAllGlobal(GlobalShutdown confirmation) {
+        if (confirmation == null) {
+            throw new IllegalArgumentException(
+                    "Global shutdown requires explicit confirmation token");
+        }
+        activeCaptures.values().forEach(this::shutdownOne);
         activeCaptures.clear();
-        log.info("All CDC captures shut down");
+        log.warn("All CDC captures shut down globally ({} captures)", activeCaptures.size());
+    }
+
+    /**
+     * stop all CDC captures on JVM shutdown so Debezium connectors stop,
+     * publishers flush/close, and offsets are persisted before exit. Without
+     * this, a pod termination left connections open and position unpersisted.
+     */
+    @PreDestroy
+    public void onShutdown() {
+        shutdownAllGlobal(GlobalShutdown.CONFIRMED);
+    }
+
+    private void shutdownOne(CaptureEntry entry) {
+        if (entry.connector() != null) {
+            var offset = entry.connector().currentOffset();
+            if (!offset.isEmpty())
+                offsetStore.save(entry.pipelineId(), offset);
+            entry.connector().stopCDC();
+        }
+        try {
+            entry.publisher().flush();
+        } catch (Exception ignored) {
+        }
+        try {
+            entry.publisher().close();
+        } catch (Exception ignored) {
+        }
+        kafkaCdcConsumer.ifPresent(c -> c.stopConsuming(entry.pipelineId()));
+    }
+
+    /** Explicit-op confirmation token for tenant-blind shutdownAllGlobal. */
+    public enum GlobalShutdown {
+        CONFIRMED
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -219,13 +314,48 @@ public class CaptureLifecycle {
         return new BoundedQueueEventPublisher();
     }
 
-    private ConnectionConfiguration toConfig(com.syncflow.core.connection.Connection conn) {
-        var p = conn.getProperties();
-        var c = conn.getCredentials();
-        return new ConnectionConfiguration(
-                ConnectorTypeMapper.toCore(p.type()),
-                p.host(), p.port(), p.database(),
-                c.username(), c.password(), p.options());
+    /**
+     * Persist (or update) the active-capture record in Postgres. The in-memory
+     * map remains the fast path for in-process reads; the DB row is the
+     * recovery path on restart.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    void persistActiveCapture(String key, String tenantId, String pipelineId,
+            CaptureStatus status, Map<String, String> offset) {
+        var entity = activeCaptureRepo.findById(key).orElseGet(() -> {
+            var e = new ActiveCaptureEntity();
+            e.setId(key);
+            e.setTenantId(tenantId);
+            e.setPipelineId(pipelineId);
+            e.setStartedAt(Instant.now());
+            return e;
+        });
+        entity.setStatus(status);
+        try {
+            entity.setOffsetData(objectMapper.writeValueAsString(offset));
+        } catch (Exception e) {
+            log.warn("Failed to serialize offset for pipeline={}", pipelineId, e);
+            entity.setOffsetData("{}");
+        }
+        entity.setUpdatedAt(Instant.now());
+        activeCaptureRepo.save(entity);
+    }
+
+    /**
+     * Rehydrate an in-memory capture entry from the durable record. Called
+     * on pod startup to restore active captures before traffic resumes.
+     */
+    public int rehydrateFromDatabase() {
+        var count = 0;
+        for (var entity : activeCaptureRepo.findAll()) {
+            if (entity.getStatus() == CaptureStatus.RUNNING) {
+                // The actual connector / publisher re-instantiation is the
+                // caller's job (see CaptureRehydrationService). Here we just
+                // make sure the entity is loaded.
+                count++;
+            }
+        }
+        return count;
     }
 
     private record CaptureEntry(CdcCapableConnector connector, EventPublisher publisher, String pipelineId) {

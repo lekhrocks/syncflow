@@ -4,6 +4,7 @@ import com.syncflow.api.cdc.CaptureLifecycle;
 import com.syncflow.api.security.rbac.AuthorizationService;
 import com.syncflow.api.security.rbac.ResourcePermission;
 import com.syncflow.core.cdc.CaptureStatus;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +30,8 @@ public class CaptureController {
     @PostMapping("/start")
     public ResponseEntity<Map<String, Object>> start(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        var status = lifecycle.start(id, null);
+        var tenantContext = TenantContextHolder.get();
+        var status = lifecycle.start(id, null, tenantContext);
         return ResponseEntity.status(status == CaptureStatus.RUNNING ? HttpStatus.OK : HttpStatus.ACCEPTED)
                 .body(Map.of("pipelineId", id, "status", status.name()));
     }
@@ -37,29 +39,33 @@ public class CaptureController {
     @PostMapping("/stop")
     public ResponseEntity<Map<String, Object>> stop(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        lifecycle.stop(id);
+        var tenantContext = TenantContextHolder.get();
+        lifecycle.stop(id, tenantContext);
         return ResponseEntity.ok(Map.of("pipelineId", id, "status", "STOPPED"));
     }
 
     @PostMapping("/pause")
     public ResponseEntity<Map<String, Object>> pause(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        lifecycle.pause(id);
+        var tenantContext = TenantContextHolder.get();
+        lifecycle.pause(id, tenantContext);
         return ResponseEntity.ok(Map.of("pipelineId", id, "status", "PAUSED"));
     }
 
     @PostMapping("/resume")
     public ResponseEntity<Map<String, Object>> resume(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        lifecycle.resume(id);
+        var tenantContext = TenantContextHolder.get();
+        lifecycle.resume(id, tenantContext);
         return ResponseEntity.ok(Map.of("pipelineId", id, "status", "RESUMED"));
     }
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        var status = lifecycle.status(id);
-        var events = lifecycle.eventCount(id);
+        var tenantContext = TenantContextHolder.get();
+        var status = lifecycle.status(id, tenantContext);
+        var events = lifecycle.eventCount(id, tenantContext);
         return ResponseEntity.ok(Map.of(
                 "pipelineId", id,
                 "captureStatus", status.name(),

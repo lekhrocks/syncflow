@@ -5,6 +5,7 @@ import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.registry.ConnectorRegistry;
 import com.syncflow.core.spi.ConnectorHealth;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -74,7 +75,8 @@ public class HealthAggregator {
     }
 
     private Map<String, Object> syncHealth() {
-        var jobs = syncOrchestrator.list();
+        var tenantContext = TenantContextHolder.get();
+        var jobs = syncOrchestrator.list(tenantContext);
         var running = jobs.stream().filter(j -> j.getState().name().equals("RUNNING")).count();
         return Map.of("activeJobs", jobs.size(), "running", running);
     }

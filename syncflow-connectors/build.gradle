@@ -13,6 +13,7 @@ dependencies {
     implementation libs.debezium.connector.mysql
 
     implementation libs.kafka.clients
+    implementation libs.hikari
 
     annotationProcessor libs.lombok
 

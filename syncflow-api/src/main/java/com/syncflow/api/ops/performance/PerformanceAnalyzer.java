@@ -2,6 +2,7 @@ package com.syncflow.api.ops.performance;
 
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.api.sync.SyncOrchestrator;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
@@ -20,8 +21,9 @@ public class PerformanceAnalyzer {
     }
 
     public Map<String, Object> analyze() {
+        var tenantContext = TenantContextHolder.get();
         var pipelines = pipelineService.list();
-        var syncJobs = syncOrchestrator.list();
+        var syncJobs = syncOrchestrator.list(tenantContext);
 
         var slowest = pipelines.stream()
                 .max(Comparator.comparing(p -> p.tableMappings().size()))

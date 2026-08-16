@@ -7,6 +7,7 @@ import com.syncflow.api.ops.performance.PerformanceAnalyzer;
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.api.sync.DeadLetterQueue;
 import com.syncflow.api.sync.SyncOrchestrator;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -87,7 +88,8 @@ public class AiCopilotService {
     }
 
     public AiResponse analyzePerformance(String sessionId, String pipelineId) {
-        var stats = syncOrchestrator.statistics(pipelineId);
+        var tenantContext = TenantContextHolder.get();
+        var stats = syncOrchestrator.statistics(pipelineId, tenantContext);
         var context = contextCollector.collect();
         var prompt = promptBuilder.analyzePerformance(context, stats);
         var raw = llmClient.call(prompt, sessionId);
@@ -95,7 +97,8 @@ public class AiCopilotService {
     }
 
     public AiResponse rootCause(String sessionId, String pipelineId) {
-        var dlqEvents = dlq.list(pipelineId);
+        var tenantContext = TenantContextHolder.get();
+        var dlqEvents = dlq.list(pipelineId, tenantContext);
         var context = contextCollector.collect();
         var prompt = promptBuilder.rootCause(context, dlqEvents);
         var raw = llmClient.call(prompt, sessionId);

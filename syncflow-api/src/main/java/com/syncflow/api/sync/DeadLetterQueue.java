@@ -7,7 +7,7 @@ import com.syncflow.api.sync.repository.DeadLetterEventRepository;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.sync.FailureReason;
 import com.syncflow.core.sync.dlq.DeadLetterEvent;
-import com.syncflow.tenant.TenantSupport;
+import com.syncflow.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -36,11 +36,13 @@ public class DeadLetterQueue {
         this.objectMapper = objectMapper;
     }
 
-    public void add(String pipelineId, CDCEvent event, FailureReason reason, int retryCount) {
+    public void add(String pipelineId, CDCEvent event, FailureReason reason, int retryCount,
+            TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
         try {
             var entity = new DeadLetterEventEntity();
             entity.setId(UUID.randomUUID().toString());
-            entity.setTenantId(tenantId());
+            entity.setTenantId(tenantContext.tenantId().value());
             entity.setPipelineId(pipelineId);
             // event may be null when enqueuing a failure without an associated CDC record
             entity.setEventId(event != null ? event.header().eventId() : null);
@@ -58,22 +60,20 @@ public class DeadLetterQueue {
     }
 
     @Transactional(readOnly = true)
-    public DeadLetterEvent get(String id) {
-        return repository.findByIdAndTenantId(id, tenantId()).map(this::toDomain).orElse(null);
+    public DeadLetterEvent get(String id, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        return repository.findByIdAndTenantId(id, tenantContext.tenantId().value()).map(this::toDomain).orElse(null);
     }
 
     @Transactional(readOnly = true)
-    public List<DeadLetterEvent> list(String pipelineId) {
+    public List<DeadLetterEvent> list(String pipelineId, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
         if (pipelineId == null) {
-            return repository.findByTenantIdOrderByCreatedAtDesc(tenantId())
+            return repository.findByTenantIdOrderByCreatedAtDesc(tenantContext.tenantId().value())
                     .stream().map(this::toDomain).toList();
         }
-        return repository.findByPipelineIdAndTenantIdOrderByCreatedAtDesc(pipelineId, tenantId())
+        return repository.findByPipelineIdAndTenantIdOrderByCreatedAtDesc(pipelineId, tenantContext.tenantId().value())
                 .stream().map(this::toDomain).toList();
-    }
-
-    private String tenantId() {
-        return TenantSupport.tenantId();
     }
 
     public void delete(String id) {

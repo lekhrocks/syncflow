@@ -3,6 +3,7 @@ package com.syncflow.api.agent.ai.tools;
 import com.syncflow.api.metadata.MetadataDiscoveryService;
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.api.sync.DeadLetterQueue;
+import com.syncflow.tenant.TenantContextHolder;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -48,7 +49,8 @@ public class ToolRegistry {
     }
 
     public String queryDlq(String pipelineId) {
-        var events = dlq.list(pipelineId);
+        var tenantContext = TenantContextHolder.get();
+        var events = dlq.list(pipelineId, tenantContext);
         return "DLQ has " + events.size() + " events for pipeline " + pipelineId;
     }
 }

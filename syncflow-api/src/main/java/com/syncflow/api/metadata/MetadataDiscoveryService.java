@@ -1,14 +1,13 @@
 package com.syncflow.api.metadata;
 
+import com.syncflow.api.connection.ConnectionMapper;
 import com.syncflow.api.connection.service.ConnectionService;
-import com.syncflow.core.connection.Connection;
 import com.syncflow.core.metadata.ColumnMetadata;
 import com.syncflow.core.metadata.ConstraintMetadata;
 import com.syncflow.core.metadata.IndexMetadata;
 import com.syncflow.core.metadata.MetadataResponse;
 import com.syncflow.core.metadata.SchemaMetadata;
 import com.syncflow.core.metadata.TableMetadata;
-import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.registry.ConnectorRegistry;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.MetadataCapableConnector;
@@ -144,16 +143,7 @@ public class MetadataDiscoveryService {
 
     private ConnectorContext context(String connectionId) {
         var conn = connectionService.getWithDecryptedCredentials(connectionId);
-        return new ConnectorContext(toConfig(conn), Map.of());
-    }
-
-    private ConnectionConfiguration toConfig(Connection conn) {
-        var props = conn.getProperties();
-        var creds = conn.getCredentials();
-        return new ConnectionConfiguration(
-                ConnectorTypeMapper.toCore(props.type()),
-                props.host(), props.port(), props.database(),
-                creds.username(), creds.password(), props.options());
+        return new ConnectorContext(ConnectionMapper.toConfig(conn), Map.of());
     }
 
     /**

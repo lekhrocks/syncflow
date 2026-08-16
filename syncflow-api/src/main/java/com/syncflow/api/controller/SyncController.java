@@ -47,28 +47,31 @@ public class SyncController {
     @GetMapping(value = "/sync/jobs/{id}/events", produces = "text/event-stream")
     public SseEmitter syncEvents(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        var tenant = TenantContextHolder.getTenantId().value();
-        return broadcaster.subscribe(tenant + ":" + id);
+        var tenantContext = TenantContextHolder.get();
+        return broadcaster.subscribe(tenantContext.tenantId().value() + ":" + id);
     }
 
     @PostMapping("/pipelines/{id}/sync/start")
     public ResponseEntity<SyncJob> start(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        return ResponseEntity.ok(orchestrator.start(id));
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(orchestrator.start(id, tenantContext));
     }
 
     @PostMapping("/pipelines/{id}/sync/stop")
     public ResponseEntity<Map<String, Object>> stop(@PathVariable String id) {
         authz.require(ResourcePermission.PIPELINE_EXECUTE);
-        orchestrator.stop(id);
+        var tenantContext = TenantContextHolder.get();
+        orchestrator.stop(id, tenantContext);
         return ResponseEntity.ok(Map.of("pipelineId", id, "status", "STOPPED"));
     }
 
     @GetMapping("/pipelines/{id}/sync/status")
     public ResponseEntity<Map<String, Object>> status(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        var state = orchestrator.status(id);
-        var stats = orchestrator.statistics(id);
+        var tenantContext = TenantContextHolder.get();
+        var state = orchestrator.status(id, tenantContext);
+        var stats = orchestrator.statistics(id, tenantContext);
         return ResponseEntity.ok(Map.of(
                 "pipelineId", id,
                 "state", state.name(),
@@ -81,26 +84,30 @@ public class SyncController {
     @GetMapping("/sync/jobs")
     public ResponseEntity<List<SyncJob>> jobs() {
         authz.require(ResourcePermission.EXECUTION_READ);
-        return ResponseEntity.ok(orchestrator.list());
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(orchestrator.list(tenantContext));
     }
 
     @GetMapping("/sync/jobs/{id}")
     public ResponseEntity<SyncJob> job(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        return ResponseEntity.ok(orchestrator.get(id));
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(orchestrator.get(id, tenantContext));
     }
 
     @GetMapping("/sync/jobs/{id}/statistics")
     public ResponseEntity<SyncStatistics> statistics(@PathVariable String id) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        return ResponseEntity.ok(orchestrator.statistics(id));
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(orchestrator.statistics(id, tenantContext));
     }
 
     @GetMapping("/dlq")
     public ResponseEntity<List<DeadLetterEvent>> dlqList(
             @RequestParam(required = false) String pipelineId) {
         authz.require(ResourcePermission.EXECUTION_READ);
-        return ResponseEntity.ok(dlq.list(pipelineId));
+        var tenantContext = TenantContextHolder.get();
+        return ResponseEntity.ok(dlq.list(pipelineId, tenantContext));
     }
 
     @PostMapping("/dlq/{id}/replay")

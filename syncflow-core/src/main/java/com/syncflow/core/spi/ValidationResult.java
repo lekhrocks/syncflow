@@ -2,6 +2,15 @@ package com.syncflow.core.spi;
 
 import java.util.List;
 
+/**
+ * Connector-SPI level validation result: returned by
+ * {@link Connector#validate(ConnectorContext)} when a connector reports
+ * whether it can accept a configuration. Distinct from
+ * {@link com.syncflow.core.pipeline.validation.ValidationResult}, which
+ * carries severity-graded issues for pipeline designers. The two are NOT
+ * interchangeable — keep this one for SPI responses, the other for
+ * pipeline validation.
+ */
 public record ValidationResult(
         boolean valid,
         List<String> errors,
