@@ -12,7 +12,8 @@ import java.util.Optional;
  * Resume checkpoints persisted to PostgreSQL; one row per
  * tenant+pipeline+table+chunk.
  *
- * <p>The tenant is passed explicitly rather than read from a ThreadLocal.
+ * <p>
+ * The tenant is passed explicitly rather than read from a ThreadLocal.
  * Snapshot workers run on pool/virtual threads that never set
  * {@code TenantContextHolder}; keying on the ThreadLocal there would resolve
  * to {@code TenantId.DEFAULT} and attribute every tenant's checkpoints to the

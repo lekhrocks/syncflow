@@ -49,7 +49,8 @@ public class MySqlWriter extends PooledJdbcBatchWriter {
         // column is a key (nothing else to update).
         return "INSERT INTO " + table + " (" + cols + ") VALUES (" + params + ")"
                 + " AS new ON DUPLICATE KEY UPDATE "
-                + (updateClause.isEmpty() ? columns.getFirst() + " = new." + columns.getFirst()
+                + (updateClause.isEmpty()
+                        ? columns.getFirst() + " = new." + columns.getFirst()
                         : updateClause);
     }
 }
