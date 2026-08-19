@@ -2,8 +2,8 @@ package com.syncflow.api.workflow;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.syncflow.api.runtimestate.RuntimeStateJson;
-import com.syncflow.api.workflow.entity.WorkflowInstanceEntity;
-import com.syncflow.api.workflow.repository.WorkflowInstanceRepository;
+import com.syncflow.persistence.workflow.entity.WorkflowInstanceEntity;
+import com.syncflow.persistence.workflow.repository.WorkflowInstanceRepository;
 import com.syncflow.core.workflow.TaskExecution;
 import com.syncflow.core.workflow.WorkflowId;
 import com.syncflow.core.workflow.WorkflowInstance;

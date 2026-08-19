@@ -20,6 +20,7 @@ include(
     "syncflow-common",
     "syncflow-core",
     "syncflow-api",
+    "syncflow-persistence",
     "syncflow-connectors",
     "syncflow-security",
     "syncflow-monitoring",

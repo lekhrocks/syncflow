@@ -1,7 +1,7 @@
 package com.syncflow.api.sync;
 
-import com.syncflow.api.sync.entity.ProcessedEventEntity;
-import com.syncflow.api.sync.repository.ProcessedEventRepository;
+import com.syncflow.persistence.sync.entity.ProcessedEventEntity;
+import com.syncflow.persistence.sync.repository.ProcessedEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;

@@ -1,7 +1,7 @@
 package com.syncflow.api.security;
 
 import com.syncflow.api.config.JwtProperties;
-import com.syncflow.api.user.repository.UserRepository;
+import com.syncflow.persistence.user.repository.UserRepository;
 import com.syncflow.tenant.TenantId;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;

@@ -1,7 +1,7 @@
 package com.syncflow.api.ops.alert;
 
-import com.syncflow.api.ops.alert.entity.AlertEventEntity;
-import com.syncflow.api.ops.alert.repository.AlertEventRepository;
+import com.syncflow.persistence.ops.alert.entity.AlertEventEntity;
+import com.syncflow.persistence.ops.alert.repository.AlertEventRepository;
 import com.syncflow.tenant.TenantSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;

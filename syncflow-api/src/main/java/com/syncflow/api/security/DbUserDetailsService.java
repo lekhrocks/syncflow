@@ -1,6 +1,6 @@
 package com.syncflow.api.security;
 
-import com.syncflow.api.user.repository.UserRepository;
+import com.syncflow.persistence.user.repository.UserRepository;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;

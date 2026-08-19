@@ -1,7 +1,7 @@
 package com.syncflow.api.cdc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.syncflow.api.cdc.repository.ActiveCaptureRepository;
+import com.syncflow.persistence.cdc.repository.ActiveCaptureRepository;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.api.kafka.KafkaCdcConsumer;
 import com.syncflow.api.lock.DistributedLockService;

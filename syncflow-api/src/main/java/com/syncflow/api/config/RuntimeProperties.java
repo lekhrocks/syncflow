@@ -61,6 +61,28 @@ public class RuntimeProperties {
         @Min(value = 1, message = "checkpointIntervalBatches must be at least 1")
         private int checkpointIntervalBatches = 5;
 
+        /**
+         * Publish live progress (persist + SSE) every N batches aggregated
+         * across the parallel chunk workers. Serialized so concurrent workers
+         * cannot clobber the JSON-payload progress write.
+         */
+        @Min(value = 1, message = "progressPublishIntervalBatches must be at least 1")
+        private int progressPublishIntervalBatches = 10;
+
+        /**
+         * Number of parallel PK-range chunk workers per snapshot (F15). One per
+         * chunk; tables with non-numeric PKs ignore this and run sequentially.
+         */
+        @Min(value = 1, message = "parallelism must be at least 1")
+        private int parallelism = 4;
+
+        /**
+         * PK ranges split a table into at most this many chunks (throttle on the
+         * batching emphasis: chunk count = batchSize, capped here).
+         */
+        @Min(value = 1, message = "maxChunks must be at least 1")
+        private int maxChunks = 64;
+
     }
 
     @Setter

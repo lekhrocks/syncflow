@@ -2,8 +2,8 @@ package com.syncflow.api.controller;
 
 import com.syncflow.api.security.AuthService;
 import com.syncflow.api.user.UserService;
-import com.syncflow.api.user.entity.UserEntity;
-import com.syncflow.api.user.repository.UserRepository;
+import com.syncflow.persistence.user.entity.UserEntity;
+import com.syncflow.persistence.user.repository.UserRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;

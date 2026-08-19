@@ -1,6 +1,6 @@
 package com.syncflow.api.pipeline.mapper;
 
-import com.syncflow.api.pipeline.entity.PipelineDesignEntity;
+import com.syncflow.persistence.pipeline.entity.PipelineDesignEntity;
 import com.syncflow.core.pipeline.AuditInformation;
 import com.syncflow.core.pipeline.PipelineDesign;
 import com.syncflow.core.pipeline.PipelineId;

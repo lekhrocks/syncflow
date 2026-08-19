@@ -1,9 +1,9 @@
 package com.syncflow.api.connection.service;
 
 import com.syncflow.api.connection.encryption.EncryptionService;
-import com.syncflow.api.connection.entity.ConnectionEntity;
+import com.syncflow.persistence.connection.entity.ConnectionEntity;
 import com.syncflow.api.connection.mapper.ConnectionMapper;
-import com.syncflow.api.connection.repository.ConnectionRepository;
+import com.syncflow.persistence.connection.repository.ConnectionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncflow.common.exception.SyncFlowException;
 import com.syncflow.core.connection.Connection;

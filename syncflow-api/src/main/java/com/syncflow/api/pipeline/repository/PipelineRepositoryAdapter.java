@@ -5,6 +5,7 @@ import com.syncflow.api.pipeline.mapper.PipelineEntityMapper;
 import com.syncflow.core.model.Pipeline;
 import com.syncflow.core.model.PipelineStatus;
 import com.syncflow.core.repository.PipelineRepository;
+import com.syncflow.persistence.pipeline.repository.PipelineJpaRepository;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 

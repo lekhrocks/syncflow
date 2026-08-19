@@ -103,7 +103,10 @@ public abstract class PooledJdbcBatchWriter extends JdbcBatchWriter {
 
     @Override
     public void rollback() {
-        // Auto-commit per batch — nothing to roll back.
+        // Auto-commit per batch — nothing to roll back in the store. But
+        // discard any buffered (not-yet-flushed) rows so a failed run's
+        // residual buffer cannot leak into the next pipeline's destination.
+        super.rollback();
     }
 
     @Override

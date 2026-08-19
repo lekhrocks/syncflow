@@ -2,8 +2,8 @@ package com.syncflow.api.security.quota;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.syncflow.api.runtimestate.RuntimeStateJson;
-import com.syncflow.api.security.quota.entity.QuotaEntity;
-import com.syncflow.api.security.quota.repository.QuotaRepository;
+import com.syncflow.persistence.security.quota.entity.QuotaEntity;
+import com.syncflow.persistence.security.quota.repository.QuotaRepository;
 import com.syncflow.tenant.TenantId;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;

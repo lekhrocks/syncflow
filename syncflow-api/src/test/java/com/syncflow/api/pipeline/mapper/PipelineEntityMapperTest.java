@@ -3,7 +3,7 @@ package com.syncflow.api.pipeline.mapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.syncflow.api.pipeline.entity.PipelineEntity;
+import com.syncflow.persistence.pipeline.entity.PipelineEntity;
 import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.model.ConnectorType;
 import com.syncflow.core.model.Pipeline;

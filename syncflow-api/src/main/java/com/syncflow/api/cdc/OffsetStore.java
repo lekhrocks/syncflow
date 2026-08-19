@@ -3,7 +3,7 @@ package com.syncflow.api.cdc;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.syncflow.api.cdc.repository.CdcOffsetRepository;
+import com.syncflow.persistence.cdc.repository.CdcOffsetRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

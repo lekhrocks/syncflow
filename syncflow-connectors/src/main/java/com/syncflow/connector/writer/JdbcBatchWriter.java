@@ -261,6 +261,19 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
                 connection.rollback();
         } catch (SQLException e) {
             throw new RuntimeException("Rollback failed", e);
+        } finally {
+            // Discard any buffered (not-yet-flushed) rows so a failed run's
+            // residual buffer cannot leak into the next pipeline's destination
+            // when its first writeBatch hits a different table. The buffered
+            // rows were never committed; the cursor checkpoint sits before
+            // them and resume re-reads them.
+            buffer.clear();
+            deleteBuffer.clear();
+            deleteColumns.clear();
+            currentTable = null;
+            currentColumns = null;
+            currentUpsertKeys = null;
+            currentInsertSql = null;
         }
     }
 
