@@ -41,16 +41,18 @@ public class MySqlWriter extends PooledJdbcBatchWriter {
         var params = "?" + ", ?".repeat(columns.size() - 1);
         var updateClause = columns.stream()
                 .filter(c -> !keyColumns.contains(c))
-                .map(c -> c + " = new." + c)
+                .map(c -> c + " = VALUES(" + c + ")")
                 .collect(Collectors.joining(", "));
-        // Row-alias form: INSERT ... VALUES (...) AS new ON DUPLICATE KEY UPDATE
-        // c = new.c — correct on MySQL 8.0.20+ (the old VALUES(col) function was
-        // deprecated there). Falls to the key column itself when every INSERT
-        // column is a key (nothing else to update).
+        // VALUES(col) is the only ON DUPLICATE KEY UPDATE form that works on
+        // every MySQL (5.7 .. 8.0) and all MariaDB. The row-alias form
+        // INSERT ... AS new ... c = new.c requires MySQL >= 8.0.19 and is
+        // unsupported on MariaDB, so it would fail at write time for those
+        // targets. VALUES(col) is deprecated (not removed) since 8.0.20 —
+        // the deprecation warning is acceptable vs a hard parse error.
         return "INSERT INTO " + table + " (" + cols + ") VALUES (" + params + ")"
-                + " AS new ON DUPLICATE KEY UPDATE "
+                + " ON DUPLICATE KEY UPDATE "
                 + (updateClause.isEmpty()
-                        ? columns.getFirst() + " = new." + columns.getFirst()
+                        ? columns.getFirst() + " = VALUES(" + columns.getFirst() + ")"
                         : updateClause);
     }
 }

@@ -233,43 +233,39 @@ public abstract class AbstractJdbcSnapshotConnector
      * Bind the keyset cursor as the PK's native type. The SPI cursor is a
      * String; for numeric PKs the driver rejects a bare String against a
      * bigint column ("operator does not exist: bigint >= character varying"),
-     * so parse a numeric-looking cursor to {@link Long}. Non-numeric PKs
-     * (uuid/text) fall through to the raw String, which the driver handles.
+     * so parse a numeric cursor to {@link Long}. Non-numeric PKs (uuid/text)
+     * fall through to the raw String, which the driver handles.
+     *
+     * <p>Whether the PK is numeric is determined by the chunk BOUNDS, not by
+     * the cursor's appearance: {@code rangeChunks} returns a whole chunk
+     * (null bounds) for every non-numeric PK (uuid/text/date) as well as for
+     * no-PK tables. Coercing an all-digit cursor to Long on such a chunk would
+     * break a TEXT keyseek — e.g. a VARCHAR PK storing '00123' bound as Long
+     * 123 fails the type check on Postgres and silently skips rows on engines
+     * that coerce. So only coerce when the chunk bounds are real Numbers.
      */
     private static Object coerceCursor(String cursor, ChunkRange chunk) {
         if (cursor == null || cursor.isEmpty()) {
             return cursor;
         }
-        // Bind the cursor in the same numeric type as the chunk bounds so the
-        // comparison operator matches the PK column type.
+        // Numeric-range chunks carry Number bounds; coerce the cursor to the
+        // same numeric type so the comparison operator matches the PK column.
         if (chunk != null && chunk.start() instanceof BigDecimal) {
-            return new BigDecimal(cursor);
+            try {
+                return new BigDecimal(cursor);
+            } catch (NumberFormatException e) {
+                return cursor;
+            }
         }
-        boolean numericRange = chunk != null && chunk.start() instanceof Number;
-        if (numericRange || isNumericCursor(cursor)) {
+        if (chunk != null && chunk.start() instanceof Number) {
             try {
                 return Long.valueOf(cursor);
             } catch (NumberFormatException e) {
                 return cursor;
             }
         }
+        // Whole-chunk (non-numeric PK / no PK): keep the raw String cursor.
         return cursor;
-    }
-
-    /** True when the cursor parses as a Long (numeric PK value). */
-    private static boolean isNumericCursor(String cursor) {
-        if (cursor == null || cursor.isEmpty()) {
-            return false;
-        }
-        for (int i = 0; i < cursor.length(); i++) {
-            if (i == 0 && (cursor.charAt(0) == '-' || cursor.charAt(0) == '+')) {
-                continue;
-            }
-            if (!Character.isDigit(cursor.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /** MIN/MAX of the PK column as bound driver values, or null on failure. */

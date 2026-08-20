@@ -191,12 +191,11 @@ class JdbcBatchWriterTest {
         // Postgres ON CONFLICT shape — a MySQL destination would otherwise fail
         // at write time with a Postgres-only statement.
         var w = new MySqlWriter();
-        // upsertSql is protected; drive it through the public SPI via a subclass
-        // that exposes it like TestWriter does for the base class.
         var sql = mysqlUpsertSql(w, "users", List.of("id", "email"), List.of("id"));
         assertTrue(sql.contains("ON DUPLICATE KEY UPDATE"), "missing ON DUPLICATE KEY UPDATE");
-        assertTrue(sql.contains(" = new.email"), "missing row-alias assignment");
+        assertTrue(sql.contains(" = VALUES(email)"), "missing VALUES() assignment");
         assertTrue(!sql.contains("ON CONFLICT"), "MySQL upsert must not use ON CONFLICT");
+        assertTrue(!sql.contains("AS new"), "row-alias form is not portable to MariaDB/MySQL<8.0.19");
     }
 
     /** Invoke the protected MySQL upsertSql for assertion. */

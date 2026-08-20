@@ -158,6 +158,14 @@ public class SnapshotExecutor {
         var job = Optional.ofNullable(findOwned(snapshotId, tenantContext))
                 .map(this::toDomain)
                 .orElseThrow(() -> new NoSuchElementException("Snapshot not found: " + snapshotId));
+        // A cancel is only meaningful for a job that is still running. If the
+        // worker already finished (COMPLETED) or the job is otherwise terminal,
+        // cancel must not overwrite that status — the caller was too late.
+        if (job.getStatus() == SnapshotStatus.COMPLETED
+                || job.getStatus() == SnapshotStatus.FAILED
+                || job.getStatus() == SnapshotStatus.CANCELLED) {
+            return job;
+        }
         var cancelled = job.withCancelled();
         // Serialize the cancel flag-set and the CANCELLED persist with the
         // worker's terminal COMPLETED persist (both take progressLock), so the
@@ -369,16 +377,35 @@ public class SnapshotExecutor {
         // Per-chunk batch counter for checkpoint/progress cadence. It is local
         // to this worker (resumed from the chunk's checkpoint) so cadence is
         // accurate per chunk rather than diluted across parallel workers sharing
-        // the global counter.
-        var chunkBatchCounter = new AtomicLong(
-                checkpoint != null ? checkpoint.lastBatchNumber() : 0);
+        // the global counter. It starts one below the FIRST read's ordinal:
+        // each increment yields the ordinal of the page just read (fresh: 0,1,2…
+        // resume: L+1, L+2…), and the next page is chunkBatch + 1 — this is what
+        // makes offset-based connectors paginate correctly on resume.
+        var chunkBatchCounter = new AtomicLong(batchNumber - 1);
 
+        // Destination columns, table, and upsert keys are constant for the whole
+        // chunk — derive once and reuse across every page instead of rebuilding
+        // them per batch.
+        var destCols = tm.columnMappings().stream()
+                .map(ColumnMapping::destinationColumn)
+                .toList();
+        var destTable = tm.destinationTable() != null
+                ? tm.destinationTable()
+                : tm.destinationCollection();
+        var keyCols = tm.primaryKey() != null ? tm.primaryKey().destinationColumns() : null;
+        var useUpsert = keyCols != null && !keyCols.isEmpty();
+        var chain = new FilterProcessor().andThen(new TransformProcessor());
+
+        // Do not read the first page at all if the snapshot was already
+        // cancelled — otherwise a cancel landing before the loop-top check would
+        // still write (and auto-commit) this chunk's first batch.
+        if (isCancelled(job)) {
+            return;
+        }
         var batchInfo = new BatchInformation(batchNumber, pipeline.settings().batchSize(),
                 tm.sourceTable(), cursor, range);
         var page = connector.readBatch(sourceCtx, pipeline.source().schema(),
                 tm.sourceTable(), batchInfo);
-
-        var chain = new FilterProcessor().andThen(new TransformProcessor());
 
         while (page != null && !page.rows().isEmpty() && !isCancelled(job)) {
             var batch = page.rows().stream()
@@ -387,20 +414,13 @@ public class SnapshotExecutor {
                     .toList();
 
             if (!batch.isEmpty()) {
-                var destCols = tm.columnMappings().stream()
-                        .map(ColumnMapping::destinationColumn)
-                        .toList();
-                var destTable = tm.destinationTable() != null
-                        ? tm.destinationTable()
-                        : tm.destinationCollection();
-                var keyCols = tm.primaryKey() != null ? tm.primaryKey().destinationColumns() : null;
                 synchronized (writerLock) {
                     // Upsert when a destination PK is mapped so a resume that
                     // re-reads already-committed rows (the pooled writer
                     // auto-commits each batch; there is no transaction to roll
                     // back) is idempotent instead of inserting duplicates or
                     // tripping a constraint violation.
-                    if (keyCols != null && !keyCols.isEmpty()) {
+                    if (useUpsert) {
                         writer.upsertBatch(destTable, destCols, batch, keyCols);
                     } else {
                         writer.writeBatch(destTable, destCols, batch);
@@ -428,7 +448,13 @@ public class SnapshotExecutor {
             // (job, progress) read-modify-write cannot lose updates across
             // parallel workers.
             synchronized (progressLock) {
-                if (chunkBatch % runtime.getSnapshot().getProgressPublishIntervalBatches() == 0) {
+                // Re-check cancellation under the lock before publishing. A
+                // cancel() that landed after the loop-top check persists
+                // CANCELLED under this same monitor; publishing progress here
+                // would write a RUNNING-status job over it and strand a zombie
+                // RUNNING row with no live worker.
+                if (!isCancelled(job)
+                        && chunkBatch % runtime.getSnapshot().getProgressPublishIntervalBatches() == 0) {
                     var pct = totalRows > 0 ? (double) rowsProcessed.get() / totalRows * 100 : 0;
                     var updated = job.withProgress(new SnapshotProgress(
                             (int) batchesDone.get(), (int) totalBatches,
@@ -438,13 +464,15 @@ public class SnapshotExecutor {
                 }
             }
 
-            // Next read continues from this page's cursor within this chunk.
-            // batchNumber is the per-chunk counter, not the shared global one —
-            // offset-based connectors (Mongo, PK-less JDBC) paginate by
-            // batchNumber * batchSize, so a global counter interleaved across
-            // parallel chunk workers would skip or re-read rows.
+            // Next read continues from this page's cursor within this chunk. Its
+            // batchNumber is the ordinal of the NEXT batch: this page was
+            // chunkBatch (after the increment above), so the next is
+            // chunkBatch + 1. Keeping the ordinal per-chunk (not the shared
+            // global counter) means offset-based connectors (Mongo, PK-less
+            // JDBC) paginate by batchNumber * batchSize without skipping or
+            // re-reading rows.
             var nextBatchInfo = new BatchInformation(
-                    (int) chunkBatch, pipeline.settings().batchSize(),
+                    (int) chunkBatch + 1, pipeline.settings().batchSize(),
                     tm.sourceTable(), page.nextCursor(), range);
             page = connector.readBatch(sourceCtx, pipeline.source().schema(),
                     tm.sourceTable(), nextBatchInfo);

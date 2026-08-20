@@ -70,11 +70,15 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
         // for table A then table B before flushing, the shared buffer would mix
         // A's rows with B's SQL. Flush any prior buffered rows first so each
         // writeBatch call is self-contained with its own table/columns.
+        // Also flush when the buffered rows were staged as an UPSERT — mixing
+        // upsert-staged rows into a plain INSERT flush drops the ON CONFLICT /
+        // ON DUPLICATE KEY semantics for the earlier rows.
         // The flush is connection-null-safe: with no open connection the buffer
         // is reset rather than left to leak across the table boundary.
         if (!buffer.isEmpty()) {
             if (currentTable == null || !currentTable.equals(safeTable)
-                    || currentColumns == null || !currentColumns.equals(safeColumns)) {
+                    || currentColumns == null || !currentColumns.equals(safeColumns)
+                    || currentUpsertKeys != null) {
                 flushInserts();
                 if (!buffer.isEmpty())
                     buffer.clear();
@@ -82,6 +86,7 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
         }
         currentTable = safeTable;
         currentColumns = safeColumns;
+        currentUpsertKeys = null;
         currentInsertSql = null; // rebuilt on flush from currentTable/currentColumns
         buffer.addAll(rows);
         if (buffer.size() >= 1000) {

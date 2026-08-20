@@ -2,6 +2,7 @@ package com.syncflow.api.config;
 
 import java.time.Duration;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -78,9 +79,13 @@ public class RuntimeProperties {
 
         /**
          * PK ranges split a table into at most this many chunks (throttle on the
-         * batching emphasis: chunk count = batchSize, capped here).
+         * batching emphasis: chunk count = batchSize, capped here). The upper
+         * bound guards the per-chunk range allocation: each chunk is one
+         * ChunkRange + one prepared statement, so a huge misconfiguration (e.g.
+         * 1e9) would allocate gigabytes and stall snack-start.
          */
         @Min(value = 1, message = "maxChunks must be at least 1")
+        @Max(value = 1024, message = "maxChunks must be at most 1024")
         private int maxChunks = 64;
 
     }
