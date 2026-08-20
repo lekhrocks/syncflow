@@ -236,7 +236,8 @@ public abstract class AbstractJdbcSnapshotConnector
      * so parse a numeric cursor to {@link Long}. Non-numeric PKs (uuid/text)
      * fall through to the raw String, which the driver handles.
      *
-     * <p>Whether the PK is numeric is determined by the chunk BOUNDS, not by
+     * <p>
+     * Whether the PK is numeric is determined by the chunk BOUNDS, not by
      * the cursor's appearance: {@code rangeChunks} returns a whole chunk
      * (null bounds) for every non-numeric PK (uuid/text/date) as well as for
      * no-PK tables. Coercing an all-digit cursor to Long on such a chunk would
