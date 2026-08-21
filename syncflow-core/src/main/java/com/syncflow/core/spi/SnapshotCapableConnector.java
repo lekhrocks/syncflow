@@ -1,6 +1,7 @@
 package com.syncflow.core.spi;
 
 import com.syncflow.core.snapshot.BatchInformation;
+import com.syncflow.core.snapshot.ChunkRange;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -19,6 +20,27 @@ public interface SnapshotCapableConnector extends MetadataCapableConnector {
      */
     Page readBatch(ConnectorContext context, String schema, String table,
             BatchInformation batchInfo);
+
+    /**
+     * Split a table into PK-range chunks for parallel snapshot (F15).
+     * The default returns a single whole-table chunk (sequential path);
+     * JDBC connectors override with real MIN/MAX-based splitting. Connectors
+     * without a single-column PK (Mongo, Redis) keep the sequential path.
+     */
+    default List<ChunkRange> rangeChunks(ConnectorContext context, String schema,
+            String table, int chunkCount) {
+        return List.of(ChunkRange.whole());
+    }
+
+    /**
+     * Return a fresh, already-connected connector instance for one parallel
+     * snapshot worker. The default reuses the singleton; JDBC connectors
+     * override so each worker owns its own {@code java.sql.Connection}
+     * instead of sharing a single non-thread-safe connection across threads.
+     */
+    default SnapshotCapableConnector snapshotClone(ConnectorContext context) {
+        return this;
+    }
 
     /**
      * Stream all rows from a table. The default reads batches internally.

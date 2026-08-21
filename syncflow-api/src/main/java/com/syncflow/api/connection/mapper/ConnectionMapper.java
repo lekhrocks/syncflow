@@ -1,7 +1,7 @@
 package com.syncflow.api.connection.mapper;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.syncflow.api.connection.entity.ConnectionEntity;
+import com.syncflow.persistence.connection.entity.ConnectionEntity;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.connection.ConnectionId;
 import com.syncflow.core.connection.ConnectionMetadata;

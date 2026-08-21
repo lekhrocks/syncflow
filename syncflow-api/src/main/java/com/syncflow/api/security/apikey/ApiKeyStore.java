@@ -1,7 +1,7 @@
 package com.syncflow.api.security.apikey;
 
-import com.syncflow.api.security.apikey.entity.ApiKeyEntity;
-import com.syncflow.api.security.apikey.repository.ApiKeyRepository;
+import com.syncflow.persistence.security.apikey.entity.ApiKeyEntity;
+import com.syncflow.persistence.security.apikey.repository.ApiKeyRepository;
 import com.syncflow.tenant.TenantId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;

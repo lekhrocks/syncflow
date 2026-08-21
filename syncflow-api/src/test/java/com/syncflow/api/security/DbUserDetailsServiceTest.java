@@ -1,7 +1,7 @@
 package com.syncflow.api.security;
 
-import com.syncflow.api.user.entity.UserEntity;
-import com.syncflow.api.user.repository.UserRepository;
+import com.syncflow.persistence.user.entity.UserEntity;
+import com.syncflow.persistence.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;

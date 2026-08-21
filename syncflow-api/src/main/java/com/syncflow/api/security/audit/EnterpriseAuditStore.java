@@ -1,7 +1,7 @@
 package com.syncflow.api.security.audit;
 
-import com.syncflow.api.security.audit.entity.AuditRecordEntity;
-import com.syncflow.api.security.audit.repository.AuditRecordRepository;
+import com.syncflow.persistence.security.audit.entity.AuditRecordEntity;
+import com.syncflow.persistence.security.audit.repository.AuditRecordRepository;
 import com.syncflow.tenant.TenantId;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;

@@ -1,8 +1,8 @@
 package com.syncflow.api.cdc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.syncflow.api.cdc.entity.CdcOffsetEntity;
-import com.syncflow.api.cdc.repository.CdcOffsetRepository;
+import com.syncflow.persistence.cdc.entity.CdcOffsetEntity;
+import com.syncflow.persistence.cdc.repository.CdcOffsetRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

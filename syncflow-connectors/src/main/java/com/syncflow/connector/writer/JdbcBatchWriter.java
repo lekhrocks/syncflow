@@ -70,11 +70,15 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
         // for table A then table B before flushing, the shared buffer would mix
         // A's rows with B's SQL. Flush any prior buffered rows first so each
         // writeBatch call is self-contained with its own table/columns.
+        // Also flush when the buffered rows were staged as an UPSERT — mixing
+        // upsert-staged rows into a plain INSERT flush drops the ON CONFLICT /
+        // ON DUPLICATE KEY semantics for the earlier rows.
         // The flush is connection-null-safe: with no open connection the buffer
         // is reset rather than left to leak across the table boundary.
         if (!buffer.isEmpty()) {
             if (currentTable == null || !currentTable.equals(safeTable)
-                    || currentColumns == null || !currentColumns.equals(safeColumns)) {
+                    || currentColumns == null || !currentColumns.equals(safeColumns)
+                    || currentUpsertKeys != null) {
                 flushInserts();
                 if (!buffer.isEmpty())
                     buffer.clear();
@@ -82,6 +86,7 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
         }
         currentTable = safeTable;
         currentColumns = safeColumns;
+        currentUpsertKeys = null;
         currentInsertSql = null; // rebuilt on flush from currentTable/currentColumns
         buffer.addAll(rows);
         if (buffer.size() >= 1000) {
@@ -261,6 +266,19 @@ public abstract class JdbcBatchWriter implements DestinationWriter {
                 connection.rollback();
         } catch (SQLException e) {
             throw new RuntimeException("Rollback failed", e);
+        } finally {
+            // Discard any buffered (not-yet-flushed) rows so a failed run's
+            // residual buffer cannot leak into the next pipeline's destination
+            // when its first writeBatch hits a different table. The buffered
+            // rows were never committed; the cursor checkpoint sits before
+            // them and resume re-reads them.
+            buffer.clear();
+            deleteBuffer.clear();
+            deleteColumns.clear();
+            currentTable = null;
+            currentColumns = null;
+            currentUpsertKeys = null;
+            currentInsertSql = null;
         }
     }
 

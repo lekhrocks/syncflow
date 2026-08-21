@@ -2,8 +2,8 @@ package com.syncflow.api.sync;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.syncflow.api.sync.entity.DeadLetterEventEntity;
-import com.syncflow.api.sync.repository.DeadLetterEventRepository;
+import com.syncflow.persistence.sync.entity.DeadLetterEventEntity;
+import com.syncflow.persistence.sync.repository.DeadLetterEventRepository;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.sync.FailureReason;
 import com.syncflow.core.sync.dlq.DeadLetterEvent;

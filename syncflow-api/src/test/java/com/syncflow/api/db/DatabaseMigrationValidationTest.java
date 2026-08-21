@@ -1,7 +1,7 @@
 package com.syncflow.api.db;
 
 import com.syncflow.api.config.AbstractIntegrationTest;
-import com.syncflow.api.connection.repository.ConnectionRepository;
+import com.syncflow.persistence.connection.repository.ConnectionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;

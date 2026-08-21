@@ -1,6 +1,6 @@
 package com.syncflow.api.pipeline.mapper;
 
-import com.syncflow.api.pipeline.entity.PipelineEntity;
+import com.syncflow.persistence.pipeline.entity.PipelineEntity;
 import com.syncflow.core.model.Pipeline;
 import org.mapstruct.Context;
 import org.mapstruct.Mapper;

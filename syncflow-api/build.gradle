@@ -15,6 +15,7 @@ dependencyManagement {
 
 dependencies {
     implementation project(":syncflow-core")
+    implementation project(":syncflow-persistence")
     implementation project(":syncflow-connectors")
     implementation project(":syncflow-security")
     implementation project(":syncflow-monitoring")
@@ -22,7 +23,17 @@ dependencies {
 
     implementation libs.spring.boot.starter.web
     implementation libs.spring.boot.starter.validation
-    implementation libs.spring.boot.starter.data.jpa
+
+    // @Transactional and Spring Data Pageable come from spring-tx / spring-data-commons.
+    // Previously transitively via starter-data-jpa (now in :syncflow-persistence); the
+    // Spring Boot BOM still manages their versions.
+    implementation "org.springframework:spring-tx"
+    implementation "org.springframework.data:spring-data-commons"
+    // JdbcTemplate for DistributedLockService, and spring-data-jpa for the
+    // repository interface types used in signatures (adapter, services). Both
+    // were transitive via starter-data-jpa (now in :syncflow-persistence).
+    implementation "org.springframework:spring-jdbc"
+    implementation "org.springframework.data:spring-data-jpa"
 
     implementation libs.spring.boot.starter.actuator
     implementation libs.spring.boot.starter.security
@@ -30,9 +41,6 @@ dependencies {
     implementation libs.spring.security.oauth2.resource.server
     implementation libs.spring.doc.openapi.starter.webmvc.ui
     implementation libs.kafka.clients
-    implementation libs.flyway.core
-    implementation libs.flyway.database.postgresql
-    implementation libs.postgresql
     implementation libs.micrometer.registry.prometheus
     implementation libs.logback.classic
     implementation libs.mapstruct

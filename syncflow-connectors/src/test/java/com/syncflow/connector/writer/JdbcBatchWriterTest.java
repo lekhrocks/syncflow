@@ -186,6 +186,30 @@ class JdbcBatchWriterTest {
     }
 
     @Test
+    void mysqlUpsertUsesOnDuplicateKeyUpdate() {
+        // The MySQL dialect override must emit ON DUPLICATE KEY UPDATE, not the
+        // Postgres ON CONFLICT shape — a MySQL destination would otherwise fail
+        // at write time with a Postgres-only statement.
+        var w = new MySqlWriter();
+        var sql = mysqlUpsertSql(w, "users", List.of("id", "email"), List.of("id"));
+        assertTrue(sql.contains("ON DUPLICATE KEY UPDATE"), "missing ON DUPLICATE KEY UPDATE");
+        assertTrue(sql.contains(" = VALUES(email)"), "missing VALUES() assignment");
+        assertTrue(!sql.contains("ON CONFLICT"), "MySQL upsert must not use ON CONFLICT");
+        assertTrue(!sql.contains("AS new"), "row-alias form is not portable to MariaDB/MySQL<8.0.19");
+    }
+
+    /** Invoke the protected MySQL upsertSql for assertion. */
+    private static String mysqlUpsertSql(MySqlWriter w, String table, List<String> cols, List<String> keys) {
+        try {
+            var m = MySqlWriter.class.getDeclaredMethod("upsertSql", String.class, List.class, List.class);
+            m.setAccessible(true);
+            return (String) m.invoke(w, table, cols, keys);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
     void upsertBatchSetsConflictTargetFromKeyColumns() {
         // R3: upsertBatch must produce an ON CONFLICT statement keyed by the
         // given PK columns (single and composite).

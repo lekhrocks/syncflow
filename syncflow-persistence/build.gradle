@@ -1,0 +1,27 @@
+plugins {
+    alias(libs.plugins.spring.dependency.management)
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"
+    }
+}
+
+dependencies {
+    implementation project(":syncflow-core")
+
+    implementation libs.spring.boot.starter.data.jpa
+    implementation libs.flyway.core
+    implementation libs.flyway.database.postgresql
+    implementation libs.postgresql
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+
+    testImplementation libs.junit.jupiter
+    testImplementation libs.junit.platform.launcher
+    testImplementation(libs.spring.boot.starter.test) {
+        exclude group: "org.junit.vintage", module: "junit-vintage-engine"
+    }
+}

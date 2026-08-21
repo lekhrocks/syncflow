@@ -1,12 +1,12 @@
 package com.syncflow.api.pipeline;
 
 import com.syncflow.api.metadata.MetadataDiscoveryService;
-import com.syncflow.api.pipeline.entity.PipelineDesignEntity;
-import com.syncflow.api.pipeline.entity.PipelineDesignVersionEntity;
+import com.syncflow.persistence.pipeline.entity.PipelineDesignEntity;
+import com.syncflow.persistence.pipeline.entity.PipelineDesignVersionEntity;
 import com.syncflow.api.pipeline.mapper.JsonMapper;
 import com.syncflow.api.pipeline.mapper.PipelineDesignEntityMapper;
-import com.syncflow.api.pipeline.repository.PipelineDesignJpaRepository;
-import com.syncflow.api.pipeline.repository.PipelineDesignVersionJpaRepository;
+import com.syncflow.persistence.pipeline.repository.PipelineDesignJpaRepository;
+import com.syncflow.persistence.pipeline.repository.PipelineDesignVersionJpaRepository;
 import com.syncflow.core.pipeline.AuditInformation;
 import com.syncflow.core.pipeline.DestinationReference;
 import com.syncflow.core.pipeline.PipelineDesign;
