@@ -14,7 +14,7 @@ import com.syncflow.core.spi.ConnectorCapabilities;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.ConnectorHealth;
 import com.syncflow.core.spi.SnapshotCapableConnector;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -68,13 +68,13 @@ public class MongoDbMetadataConnector implements SnapshotCapableConnector {
     }
 
     @Override
-    public ValidationResult validate(ConnectorContext ctx) {
+    public ConnectorValidationResult validate(ConnectorContext ctx) {
         try {
             connect(ctx);
             client.listDatabaseNames().first();
-            return ValidationResult.ok();
+            return ConnectorValidationResult.ok();
         } catch (Exception e) {
-            return ValidationResult.failed(List.of(e.getMessage()));
+            return ConnectorValidationResult.failed(List.of(e.getMessage()));
         } finally {
             disconnect();
         }

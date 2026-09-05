@@ -12,7 +12,7 @@ import com.syncflow.core.cdc.OffsetInformation;
 import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.model.ConnectorType;
 import com.syncflow.core.spi.ConnectorContext;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 import io.debezium.engine.ChangeEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,7 +78,7 @@ public class PostgresCdcConnector extends DebeziumCdcConnector {
      * privilege.
      */
     @Override
-    public ValidationResult validate(ConnectorContext ctx) {
+    public ConnectorValidationResult validate(ConnectorContext ctx) {
         var config = ctx.config();
         var jdbcUrl = "jdbc:postgresql://" + config.host() + ":" + config.port()
                 + "/" + config.database();
@@ -115,10 +115,10 @@ public class PostgresCdcConnector extends DebeziumCdcConnector {
 
         if (errors.isEmpty()) {
             log.debug("PostgreSQL CDC pre-flight validation passed for host={}", config.host());
-            return ValidationResult.ok();
+            return ConnectorValidationResult.ok();
         }
         log.warn("PostgreSQL CDC pre-flight validation failed: {}", errors);
-        return ValidationResult.failed(errors);
+        return ConnectorValidationResult.failed(errors);
     }
 
     @Override

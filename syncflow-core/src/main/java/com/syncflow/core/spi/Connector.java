@@ -16,7 +16,7 @@ public interface Connector {
 
     boolean isConnected();
 
-    ValidationResult validate(ConnectorContext context);
+    ConnectorValidationResult validate(ConnectorContext context);
 
     List<String> discoverSchemas(ConnectorContext context);
 

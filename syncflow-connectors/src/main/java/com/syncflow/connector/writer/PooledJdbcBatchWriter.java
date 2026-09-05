@@ -30,7 +30,9 @@ public abstract class PooledJdbcBatchWriter extends JdbcBatchWriter {
     private static final Logger log = LoggerFactory.getLogger(PooledJdbcBatchWriter.class);
 
     private static final Map<String, HikariDataSource> POOLS = new ConcurrentHashMap<>();
-    private static final int POOL_SIZE = 4;
+    // ponytail: System.getenv is read once at class load; tune via SYNCFLOW_WRITER_POOL_SIZE if needed
+    private static final int POOL_SIZE = Integer.parseInt(
+            System.getenv().getOrDefault("SYNCFLOW_WRITER_POOL_SIZE", "4"));
 
     private volatile String poolKey;
 

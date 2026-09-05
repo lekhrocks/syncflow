@@ -1,7 +1,7 @@
 # SyncFlow Architecture Analysis
 
 **Generated:** 2026-08-12  
-**Last updated:** 2026-08-17 (F11/F12 persistence extraction, S2 snapshot lock, F15 parallel chunking, P6 cursor typing — see item statuses below)  
+**Last updated:** 2026-09-05 (M1/M2/M6/M7/M8 maintainability, D6 metrics dedup — see item statuses below)  
 **Scope:** End-to-end codebase review (core, api, connectors, common, agent)
 
 ---
@@ -54,43 +54,43 @@
 
 ### 2.1 Architecture & Design Flaws
 
-| # | Issue | Location | Severity | Impact |
-|---|-------|----------|----------|--------|
-| **A1** | **In-memory runtime state maps** (`ConcurrentHashMap`) used for active jobs/captures | `SnapshotExecutor.cancellations`, `CaptureLifecycle.activeCaptures`, `SyncOrchestrator.eventQueues` | **HIGH** | State lost on pod restart; no HA; memory leaks if not cleaned; cannot scale horizontally |
-| **A2** | **Virtual threads + ThreadLocal tenant context** — broken by design | `TenantContextHolder` (ThreadLocal) + `Thread.startVirtualThread()` | **HIGH** | Tenant leakage across requests; security boundary violation; `TenantSupport.workerContext()` hack required |
-| **A3** | **Single-table assumption in SyncOrchestrator** | `SyncOrchestrator.start()` line 120: `pipeline.tableMappings().stream().findFirst()` | **HIGH** | Only first table mapping processed; multi-table pipelines silently broken |
-| **A4** | **DELETE operations not implemented in writer** | `DestinationRouter.java:48` — `// ponytail: DELETE via writer not yet supported` | **MEDIUM** | Data drift; deletes not propagated to destination |
-| **A5** | **No exactly-once semantics for CDC** | `CaptureLifecycle` + `SyncOrchestrator` — idempotency only at event level, not transaction | **MEDIUM** | Duplicate events on restart; no transaction boundary preservation |
-| **A6** | **PipelineRepository is in-memory** | `InMemoryPipelineRepository` used in tests; no persistent impl visible in core | **MEDIUM** | Core module lacks persistence abstraction; API module has JPA entities but core doesn't define SPI |
-| **A7** | **Tight coupling: API module imports core SPI + concrete domain** | `syncflow-api` depends on `syncflow-core` SPI and domain models | **MEDIUM** | Violates clean architecture; core should not know about API; API should depend on core interfaces only |
-| **A8** | **No circuit breaker / backpressure on event queue** | `SyncOrchestrator` uses unbounded `LinkedBlockingQueue(10000)` | **MEDIUM** | OOME risk under burst; no flow control |
+| # | Issue | Location | Severity | Impact | Status |
+|---|-------|----------|----------|--------|--------|
+| **A1** | **In-memory runtime state maps** (`ConcurrentHashMap`) used for active jobs/captures | `SnapshotExecutor.cancellations`, `CaptureLifecycle.activeCaptures`, `SyncOrchestrator.eventQueues` | **HIGH** | State lost on pod restart; no HA; memory leaks if not cleaned; cannot scale horizontally | (see S1) |
+| **A2** | **Virtual threads + ThreadLocal tenant context** — broken by design | `TenantContextHolder` (ThreadLocal) + `Thread.startVirtualThread()` | **HIGH** | Tenant leakage across requests; security boundary violation; `TenantSupport.workerContext()` hack required | (see S4) |
+| **A3** | **Single-table assumption in SyncOrchestrator** | `SyncOrchestrator.start()` line 120: `pipeline.tableMappings().stream().findFirst()` | **HIGH** | Only first table mapping processed; multi-table pipelines silently broken | ✅ **Done** — iterates all `tableMappings` with dispatch map |
+| **A4** | **DELETE operations not implemented in writer** | `DestinationRouter.java:48` — `// ponytail: DELETE via writer not yet supported` | **MEDIUM** | Data drift; deletes not propagated to destination | ✅ **Done** — `JdbcBatchWriter.deleteBatch()` with composite-IN DELETE |
+| **A5** | **No exactly-once semantics for CDC** | `CaptureLifecycle` + `SyncOrchestrator` — idempotency only at event level, not transaction | **MEDIUM** | Duplicate events on restart; no transaction boundary preservation | (see F14) |
+| **A6** | **PipelineRepository is in-memory** | `InMemoryPipelineRepository` used in tests; no persistent impl visible in core | **MEDIUM** | Core module lacks persistence abstraction; API module has JPA entities but core doesn't define SPI | (see F12) |
+| **A7** | **Tight coupling: API module imports core SPI + concrete domain** | `syncflow-api` depends on `syncflow-core` SPI and domain models | **MEDIUM** | Violates clean architecture; core should not know about API; API should depend on core interfaces only | (see F11) |
+| **A8** | **No circuit breaker / backpressure on event queue** | `SyncOrchestrator` uses unbounded `LinkedBlockingQueue(10000)` | **MEDIUM** | OOME risk under burst; no flow control | (see F7) |
 
 ---
 
 ### 2.2 Duplicate Logic
 
-| # | Duplicated Logic | Locations | Recommendation |
-|---|------------------|-----------|----------------|
-| **D1** | **ConnectionConfiguration construction** from `Connection` entity | `SnapshotExecutor.toConfig()`, `SyncOrchestrator.toConfig()`, `CaptureLifecycle.toConfig()`, `DestinationRouter.toConfig()`, `PipelineDesignerService.toConfig()` (5 copies) | Extract to `ConnectionMapper` utility in `syncflow-common` or `syncflow-api` |
-| **D2** | **Offset store key = pipelineId** (hardcoded) | `CaptureLifecycle.start()`, `CaptureLifecycle.stop()`, `OffsetStore` interface | Make configurable; support multi-table offsets via composite key |
-| **D3** | **Event publishing to publisher** (counter + publish) | `CaptureLifecycle.start()` line 100-105, `SnapshotExecutor` doesn't publish | Unify event emission via `EventPublisher` abstraction |
-| **D4** | **BatchInformation cursor/offset calculation** | `SnapshotPlannerUnitTest` mirrors logic from `AbstractJdbcSnapshotConnector.readBatch()` | Move to shared `PaginationUtil` |
-| **D5** | **ValidationResult pattern** (ok/failed) | `ValidationResult` in core SPI + `ValidationResult` in pipeline validation (different packages) | Unify into single `ValidationResult` in `syncflow-common` |
-| **D6** | **Metrics counter/timer boilerplate** | Every executor/orchestrator repeats `meterRegistry.counter(...)` patterns | Create `MetricsHelper` with `incrementCounter()`, `recordTimer()` |
+| # | Duplicated Logic | Locations | Recommendation | Status |
+|---|------------------|-----------|----------------|--------|
+| **D1** | **ConnectionConfiguration construction** from `Connection` entity | `SnapshotExecutor.toConfig()`, `SyncOrchestrator.toConfig()`, `CaptureLifecycle.toConfig()`, `DestinationRouter.toConfig()`, `PipelineDesignerService.toConfig()` (5 copies) | Extract to `ConnectionMapper` utility in `syncflow-common` or `syncflow-api` | (see F10) |
+| **D2** | **Offset store key = pipelineId** (hardcoded) | `CaptureLifecycle.start()`, `CaptureLifecycle.stop()`, `OffsetStore` interface | Make configurable; support multi-table offsets via composite key | ✅ **Done** — key is `tenantId:pipelineId` composite |
+| **D3** | **Event publishing to publisher** (counter + publish) | `CaptureLifecycle.start()` line 100-105, `SnapshotExecutor` doesn't publish | Unify event emission via `EventPublisher` abstraction | ✅ **Done** — single `EventPublisher` interface, mutually exclusive impls |
+| **D4** | **BatchInformation cursor/offset calculation** | `SnapshotPlannerUnitTest` mirrors logic from `AbstractJdbcSnapshotConnector.readBatch()` | Move to shared `PaginationUtil` | ✅ **By design** — `BatchInformation` is a simple record; test mirrors connector logic intentionally |
+| **D5** | **ValidationResult pattern** (ok/failed) | `ValidationResult` in core SPI + `ValidationResult` in pipeline validation (different packages) | Unify into single `ValidationResult` in `syncflow-common` | (see M1) |
+| **D6** | **Metrics counter/timer boilerplate** | Every executor/orchestrator repeats `meterRegistry.counter(...)` patterns | Create `MetricsHelper` with `incrementCounter()`, `recordTimer()` | ✅ **Done** — `MetricsHelper` with `increment(registry, name, tags...)` used by all 23 call sites |
 
 ---
 
 ### 2.3 Performance Bottlenecks
 
-| # | Bottleneck | Location | Why It Matters |
-|---|------------|----------|----------------|
-| **P1** | **Per-event writer connect/commit/close** | `DestinationRouter.write()` lines 32-58 | New DB connection + transaction per CDC event = catastrophic latency |
-| **P2** | **No connection pooling in writers** | `JdbcBatchWriter.connect()` creates raw `DriverManager.getConnection()` | No pooling; connection storm under load |
-| **P3** | **Virtual thread per pipeline** (unbounded) | `SnapshotExecutor.start()`, `SyncOrchestrator.start()` | Thread explosion with many pipelines; no pool sizing |
-| **P4** | **Jackson ObjectMapper per connector instance** | `PostgresCdcConnector.MAPPER`, `MySqlCdcConnector.MAPPER` (static but per-class) | Acceptable but could be shared; minor |
-| **P5** | **Synchronous flush/commit per batch in snapshot** | `SnapshotExecutor.executeInner()` lines 246-248 | Blocks virtual thread; should batch commits |
+| # | Bottleneck | Location | Why It Matters | Status |
+|---|------------|----------|----------------|--------|
+| **P1** | **Per-event writer connect/commit/close** | `DestinationRouter.write()` lines 32-58 | New DB connection + transaction per CDC event = catastrophic latency | (see S5) |
+| **P2** | **No connection pooling in writers** | `JdbcBatchWriter.connect()` creates raw `DriverManager.getConnection()` | No pooling; connection storm under load | (see S5) |
+| **P3** | **Virtual thread per pipeline** (unbounded) | `SnapshotExecutor.start()`, `SyncOrchestrator.start()` | Thread explosion with many pipelines; no pool sizing | ✅ **Done** — bounded worker pool `min(parallelism, workItems.size())` |
+| **P4** | **Jackson ObjectMapper per connector instance** | `PostgresCdcConnector.MAPPER`, `MySqlCdcConnector.MAPPER` (static but per-class) | Acceptable but could be shared; minor | Acceptable |
+| **P5** | **Synchronous flush/commit per batch in snapshot** | `SnapshotExecutor.executeInner()` lines 246-248 | Blocks virtual thread; should batch commits | ✅ **Done** — single `flush()`+`commit()` after all workers join |
 | **P6** | **Keyset pagination uses string cursor comparison** | `AbstractJdbcSnapshotConnector.readKeysetPage()` line 91: `stmt.setObject(1, cursor)` | Lexicographic comparison breaks for numeric/uuid PKs if cursor not same type. **Status (2026-08-17): ✅ fixed** — numeric cursors bound as `Long` (fixes `bigint >= character varying`) |
-| **P7** | **No batching in SyncOrchestrator event processing** | `runInner()` drains max 100 events, processes one-by-one | Writer called per event (see P1); should batch writes |
+| **P7** | **No batching in SyncOrchestrator event processing** | `runInner()` drains max 100 events, processes one-by-one | Writer called per event (see P1); should batch writes | ✅ **Done** — `drainTo` + writeBuffer/deleteBuffer → `router.writeBatch()` per table |
 
 ---
 
@@ -109,16 +109,16 @@
 
 ### 2.5 Maintainability Issues
 
-| # | Issue | Impact |
-|---|-------|--------|
-| **M1** | **Two `ValidationResult` classes** | `com.syncflow.core.spi.ValidationResult` vs `com.syncflow.core.pipeline.validation.ValidationResult` — confusion, not unified |
-| **M2** | **Two `ProcessingContext` classes** | `com.syncflow.core.snapshot.pipeline.ProcessingContext` vs `com.syncflow.core.sync.ProcessingContext` — same name, different packages |
-| **M3** | **Core module has no persistence SPI** | `PipelineRepository` is interface but only `InMemoryPipelineRepository` in core; JPA entities only in API |
-| **M4** | **`@Transactional` on read-only methods with validation that throws** | `PipelineDesignerService.validate()` explicitly avoids `@Transactional` due to `UnexpectedRollbackException` — symptom of wrong exception handling |
-| **M5** | **Magic numbers / hardcoded values** | `QUEUE_CAPACITY=10000`, `MAX_RETRIES=3`, `BASE_DELAY_MS=1000`, checkpoint every 5 batches — not configurable |
-| **M6** | **`ponytail:` comments indicate known debt** | `DestinationRouter:49` — "DELETE via writer not yet supported" |
-| **M7** | **Inconsistent error handling** | Some methods throw `SyncFlowException`, others `IllegalArgumentException`, others `RuntimeException` — no unified strategy |
-| **M8** | **`SnapshotExecutor` does too much** | 350+ lines: orchestration + persistence + metrics + tenant context + checkpointing + event emission — violates SRP |
+| # | Issue | Impact | Status |
+|---|-------|--------|--------|
+| **M1** | **Two `ValidationResult` classes** | `com.syncflow.core.spi.ValidationResult` vs `com.syncflow.core.pipeline.validation.ValidationResult` — confusion, not unified | ✅ **Done** — SPI one renamed to `ConnectorValidationResult`; pipeline one kept with distinct shape |
+| **M2** | **Two `ProcessingContext` classes** | `com.syncflow.core.snapshot.pipeline.ProcessingContext` vs `com.syncflow.core.sync.ProcessingContext` — same name, different packages | ✅ **Done** — dead `core.sync.ProcessingContext` deleted (zero usages) |
+| **M3** | **Core module has no persistence SPI** | `PipelineRepository` is interface but only `InMemoryPipelineRepository` in core; JPA entities only in API | (see F12) |
+| **M4** | **`@Transactional` on read-only methods with validation that throws** | `PipelineDesignerService.validate()` explicitly avoids `@Transactional` due to `UnexpectedRollbackException` — symptom of wrong exception handling | ✅ **By design** — intentional omission with explanatory comment |
+| **M5** | **Magic numbers / hardcoded values** | `QUEUE_CAPACITY=10000`, `MAX_RETRIES=3`, `BASE_DELAY_MS=1000`, checkpoint every 5 batches — not configurable | (see F8) |
+| **M6** | **`ponytail:` comments indicate known debt** | `DestinationRouter:49` — "DELETE via writer not yet supported" | ✅ **Done** — DELETE fully implemented in `JdbcBatchWriter.deleteBatch()` |
+| **M7** | **Inconsistent error handling** | Some methods throw `SyncFlowException`, others `IllegalArgumentException`, others `RuntimeException` — no unified strategy | ✅ **Done** — `GlobalExceptionHandler` now maps `IllegalArgumentException`→400, `NoSuchElementException`→404, `IllegalStateException`→409 |
+| **M8** | **`SnapshotExecutor` does too much** | 350+ lines: orchestration + persistence + metrics + tenant context + checkpointing + event emission — violates SRP | ✅ **Done** — `snapshotRange` + `cursorWithinRange` extracted to `SnapshotWorker` (591→443 lines) |
 
 ---
 

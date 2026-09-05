@@ -14,7 +14,7 @@ import com.syncflow.core.spi.ConnectorCapabilities;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.ConnectorHealth;
 import com.syncflow.core.spi.MetadataCapableConnector;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -79,11 +79,11 @@ public abstract class AbstractJdbcMetadataConnector implements MetadataCapableCo
     }
 
     @Override
-    public ValidationResult validate(ConnectorContext ctx) {
+    public ConnectorValidationResult validate(ConnectorContext ctx) {
         try (var c = DriverManager.getConnection(jdbcUrl(ctx.config()), jdbcProperties(ctx.config()))) {
-            return ValidationResult.ok();
+            return ConnectorValidationResult.ok();
         } catch (SQLException e) {
-            return ValidationResult.failed(List.of(e.getMessage()));
+            return ConnectorValidationResult.failed(List.of(e.getMessage()));
         }
     }
 

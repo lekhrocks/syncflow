@@ -23,7 +23,7 @@ import com.syncflow.core.spi.CdcCapableConnector;
 import com.syncflow.core.spi.ConnectorCapabilities;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.ConnectorHealth;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 import org.bson.BsonDocument;
 import org.bson.Document;
 import org.springframework.stereotype.Component;
@@ -81,8 +81,8 @@ public class MongoDbCdcConnector implements CdcCapableConnector {
     }
 
     @Override
-    public ValidationResult validate(ConnectorContext ctx) {
-        return ValidationResult.ok();
+    public ConnectorValidationResult validate(ConnectorContext ctx) {
+        return ConnectorValidationResult.ok();
     }
 
     @Override

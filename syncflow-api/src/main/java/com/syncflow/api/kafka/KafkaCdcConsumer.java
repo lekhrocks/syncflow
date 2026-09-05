@@ -1,6 +1,7 @@
 package com.syncflow.api.kafka;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syncflow.api.config.MetricsHelper;
 import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.tenant.TenantContext;
@@ -126,14 +127,14 @@ public class KafkaCdcConsumer {
                         // Kafka CDC consumer runs in its own thread; use the worker tenant context
                         // from the request thread that started the capture.
                         syncOrchestrator.submitEvent(pipelineId, event, tenantContext);
-                        meterRegistry.counter("syncflow.kafka.consume.success",
+                        MetricsHelper.increment(meterRegistry, "syncflow.kafka.consume.success",
                                 "pipeline", pipelineId,
-                                "topic", record.topic()).increment();
+                                "topic", record.topic());
                     } catch (Exception e) {
                         log.error("Failed to deserialize/submit Kafka record pipeline={} topic={} offset={}",
                                 pipelineId, record.topic(), record.offset(), e);
-                        meterRegistry.counter("syncflow.kafka.consume.error",
-                                "pipeline", pipelineId).increment();
+                        MetricsHelper.increment(meterRegistry, "syncflow.kafka.consume.error",
+                                "pipeline", pipelineId);
                     }
                 }
 
@@ -145,8 +146,8 @@ public class KafkaCdcConsumer {
             log.debug("Kafka consumer woken up for pipeline={}", pipelineId);
         } catch (Exception e) {
             log.error("Kafka consumer loop failed for pipeline={}", pipelineId, e);
-            meterRegistry.counter("syncflow.kafka.consumer.failure",
-                    "pipeline", pipelineId).increment();
+            MetricsHelper.increment(meterRegistry, "syncflow.kafka.consumer.failure",
+                    "pipeline", pipelineId);
         } finally {
             consumer.close();
             log.debug("Kafka consumer closed for pipeline={}", pipelineId);

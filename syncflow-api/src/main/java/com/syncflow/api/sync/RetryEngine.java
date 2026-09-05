@@ -4,6 +4,7 @@ import com.syncflow.api.config.RuntimeProperties;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.sync.FailureReason;
 import com.syncflow.tenant.TenantContext;
+import com.syncflow.api.config.MetricsHelper;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
@@ -35,16 +36,16 @@ public class RetryEngine {
         if (!reason.retryable() || state.count.get() >= runtime.getRetry().getMaxAttempts()) {
             dlq.add(pipelineId, event, reason, state.count.get(), tenantContext);
             retries.remove(key);
-            meterRegistry.counter("syncflow.sync.dlq.added",
-                    "pipeline", pipelineId).increment();
+            MetricsHelper.increment(meterRegistry, "syncflow.sync.dlq.added",
+                    "pipeline", pipelineId);
             return new RetryDecision(false, Duration.ZERO);
         }
 
         state.count.incrementAndGet();
         long baseMs = runtime.getRetry().getBaseDelay().toMillis();
         var delay = Duration.ofMillis(baseMs * (1L << (state.count.get() - 1)));
-        meterRegistry.counter("syncflow.sync.retries",
-                "pipeline", pipelineId).increment();
+        MetricsHelper.increment(meterRegistry, "syncflow.sync.retries",
+                "pipeline", pipelineId);
         return new RetryDecision(true, delay);
     }
 

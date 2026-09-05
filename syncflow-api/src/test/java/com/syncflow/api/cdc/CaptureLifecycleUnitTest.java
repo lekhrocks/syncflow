@@ -28,7 +28,7 @@ import com.syncflow.core.pipeline.SourceReference;
 import com.syncflow.core.registry.ConnectorRegistry;
 import com.syncflow.core.spi.CdcCapableConnector;
 import com.syncflow.core.spi.ConnectorContext;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -141,7 +141,7 @@ class CaptureLifecycleUnitTest {
         when(connectorRegistry.get(ConnectorType.POSTGRESQL))
                 .thenReturn(Optional.of(cdcConnector));
         when(cdcConnector.validate(any(ConnectorContext.class)))
-                .thenReturn(ValidationResult.ok());
+                .thenReturn(ConnectorValidationResult.ok());
         Mockito.lenient()
                 .when(cdcConnector.captureStatus()).thenReturn(CaptureStatus.INACTIVE);
         when(offsetStore.get(tenantKeyOf(TenantContextHolder.get(), pipelineId))).thenReturn(Map.of());
@@ -185,7 +185,7 @@ class CaptureLifecycleUnitTest {
             when(connectorRegistry.get(ConnectorType.POSTGRESQL))
                     .thenReturn(Optional.of(cdcConnector));
             when(cdcConnector.validate(any()))
-                    .thenReturn(ValidationResult.failed(List.of("wal_level not logical")));
+                    .thenReturn(ConnectorValidationResult.failed(List.of("wal_level not logical")));
 
             assertThrows(IllegalStateException.class,
                     () -> lifecycle.start("p-fail", null, TenantContextHolder.get()));
