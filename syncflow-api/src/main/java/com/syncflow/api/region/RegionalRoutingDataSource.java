@@ -2,6 +2,7 @@ package com.syncflow.api.region;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +17,13 @@ import org.springframework.stereotype.Component;
  * - Reads (SELECT) to local region replica (with fallback to primary)
  *
  * <p>
+ * This bean is only instantiated when syncflow.region.replication-enabled is
+ * true.
+ * In single-region deployments (the default), this bean is skipped, and the
+ * standard Spring
+ * datasource is used instead.
+ *
+ * <p>
  * Usage: Configure PersistenceConfig to use this datasource for JPA instead of
  * a single
  * datasource. Spring will invoke determineCurrentLookupKey() before each
@@ -23,6 +31,10 @@ import org.springframework.stereotype.Component;
  * the correct pool.
  */
 @Component
+@ConditionalOnProperty(
+    name = "syncflow.region.replication-enabled",
+    havingValue = "true",
+    matchIfMissing = false)
 public class RegionalRoutingDataSource extends AbstractRoutingDataSource {
 
     private final RegionalDataSourceFactory regionalDataSourceFactory;

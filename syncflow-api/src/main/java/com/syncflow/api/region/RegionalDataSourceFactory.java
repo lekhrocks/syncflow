@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,8 +18,19 @@ import org.springframework.stereotype.Component;
  * - For writes: always use primary datasource
  * - For reads: use local replica if available, fallback to primary
  * - During failover: updatePrimaryRegion() switches to new primary
+ *
+ * <p>
+ * This bean is only instantiated when syncflow.region.replication-enabled is
+ * true.
+ * In single-region deployments (the default), this bean is skipped, and the
+ * standard Spring
+ * datasource is used instead.
  */
 @Component
+@ConditionalOnProperty(
+    name = "syncflow.region.replication-enabled",
+    havingValue = "true",
+    matchIfMissing = false)
 public class RegionalDataSourceFactory {
 
     private static final Logger logger = LoggerFactory.getLogger(RegionalDataSourceFactory.class);
