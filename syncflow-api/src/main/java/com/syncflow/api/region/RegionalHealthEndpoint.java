@@ -3,6 +3,7 @@ package com.syncflow.api.region;
 import java.util.HashMap;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
  * - DOWN: Primary unhealthy
  */
 @Component("regional")
+@ConditionalOnProperty(name = "syncflow.region.replication-enabled", havingValue = "true", matchIfMissing = false)
 public class RegionalHealthEndpoint implements HealthIndicator {
 
     private final RegionalProperties regionalProperties;

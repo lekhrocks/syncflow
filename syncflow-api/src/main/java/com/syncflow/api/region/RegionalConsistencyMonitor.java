@@ -8,6 +8,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Component;
  * - regional.consistency.status (0=OK, 1=DIVERGED, 2=ERROR)
  */
 @Component
+@ConditionalOnProperty(name = "syncflow.region.replication-enabled", havingValue = "true", matchIfMissing = false)
 public class RegionalConsistencyMonitor {
 
     private static final Logger logger = LoggerFactory.getLogger(RegionalConsistencyMonitor.class);

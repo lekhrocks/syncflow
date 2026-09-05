@@ -4,6 +4,7 @@ import com.syncflow.core.model.Pipeline;
 import com.syncflow.core.model.Pipeline.RegionStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Component;
  * current region.
  */
 @Component
+@ConditionalOnProperty(name = "syncflow.region.replication-enabled", havingValue = "true", matchIfMissing = false)
 public class RegionalPipelineOrchestrator {
 
     private static final Logger logger = LoggerFactory.getLogger(RegionalPipelineOrchestrator.class);
