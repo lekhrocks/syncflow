@@ -46,7 +46,9 @@ class ApiAuthContractTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("syncflow")
             .withUsername("syncflow")
-            .withPassword("syncflow");
+            .withPassword("syncflow")
+            .withCommand("postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=5", "-c",
+                    "max_replication_slots=5");
 
     @LocalServerPort
     private int port;

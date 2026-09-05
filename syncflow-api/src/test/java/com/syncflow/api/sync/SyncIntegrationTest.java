@@ -44,7 +44,10 @@ class SyncIntegrationTest extends AbstractIntegrationTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("synctest")
             .withUsername("testuser")
-            .withPassword("testpass");
+            .withPassword("testpass")
+            // F17 logical replication requires these settings
+            .withCommand("postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=5",
+                    "-c", "max_replication_slots=5");
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {

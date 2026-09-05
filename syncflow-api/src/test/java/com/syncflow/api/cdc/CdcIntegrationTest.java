@@ -45,7 +45,8 @@ class CdcIntegrationTest extends AbstractIntegrationTest {
             .withDatabaseName("cdctest")
             .withUsername("testuser")
             .withPassword("testpass")
-            .withCommand("postgres", "-c", "wal_level=logical");
+            .withCommand("postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=5",
+                    "-c", "max_replication_slots=5");
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
