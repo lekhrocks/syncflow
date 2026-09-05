@@ -331,4 +331,142 @@ class ProcessingPipelineTest {
         assertThrows(SqlExpressionEvaluator.ExpressionEvaluationException.class,
                 () -> new TransformProcessor().process(record, ctx(mapping)));
     }
+
+    // -------------------------------------------------------------------------
+    // SQL_QUERY (Phase 2) tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    void sqlQueryProjectsColumnsFromVirtualTable() {
+        var queries = List.of("SELECT id, UPPER(name) AS name FROM __row__");
+        var proc = new SqlRowTransformProcessor(queries);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", "42");
+        record.put("name", "alice");
+
+        var result = proc.process(record, ctx(
+                new TableMapping("t", "t_dest", null, null, List.of(), List.of(), List.of(), null)));
+
+        assertEquals("42", result.get("id"));
+        assertEquals("ALICE", result.get("name"));
+    }
+
+    @Test
+    void sqlQueryArithmeticExpression() {
+        var queries = List.of("SELECT id, price * 1.1 AS price FROM __row__");
+        var proc = new SqlRowTransformProcessor(queries);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", "1");
+        record.put("price", "100");
+
+        var result = proc.process(record, ctx(
+                new TableMapping("t", "t_dest", null, null, List.of(), List.of(), List.of(), null)));
+
+        assertNotNull(result.get("price"));
+        double price = Double.parseDouble(result.get("price").toString());
+        assertEquals(110.0, price, 0.01);
+    }
+
+    @Test
+    void sqlQueryConcatenatesFields() {
+        var queries = List.of(
+                "SELECT id, CONCAT(first_name, ' ', last_name) AS full_name FROM __row__");
+        var proc = new SqlRowTransformProcessor(queries);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", "1");
+        record.put("first_name", "Jane");
+        record.put("last_name", "Smith");
+
+        var result = proc.process(record, ctx(
+                new TableMapping("t", "t_dest", null, null, List.of(), List.of(), List.of(), null)));
+
+        assertEquals("Jane Smith", result.get("full_name"));
+    }
+
+    @Test
+    void sqlQueryMultipleQueriesChained() {
+        // First query: uppercase name
+        // Second query: add a prefix to the already-uppercased name
+        var queries = List.of(
+                "SELECT id, UPPER(name) AS name FROM __row__",
+                "SELECT id, CONCAT('USR_', name) AS name FROM __row__");
+        var proc = new SqlRowTransformProcessor(queries);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", "7");
+        record.put("name", "alice");
+
+        var result = proc.process(record, ctx(
+                new TableMapping("t", "t_dest", null, null, List.of(), List.of(), List.of(), null)));
+
+        assertEquals("USR_ALICE", result.get("name"));
+    }
+
+    @Test
+    void sqlQueryNoTransformsIsNoOp() {
+        // Empty sqlTransforms list — SqlRowTransformProcessor must return the row
+        // unchanged
+        var tm = new TableMapping("t", "t_dest", null, null, List.of(), List.of(), List.of(), null,
+                List.of()); // explicit empty list
+        var proc = new SqlRowTransformProcessor(tm);
+
+        var record = Map.<String, Object>of("id", "1", "name", "bob");
+        var result = proc.process(record, ctx(tm));
+
+        assertNotNull(result);
+        assertEquals("1", result.get("id"));
+        assertEquals("bob", result.get("name"));
+    }
+
+    @Test
+    void sqlQueryNullValueHandled() {
+        var queries = List.of("SELECT id, COALESCE(nickname, 'anon') AS nickname FROM __row__");
+        var proc = new SqlRowTransformProcessor(queries);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", "5");
+        record.put("nickname", null);
+
+        var result = proc.process(record, ctx(
+                new TableMapping("t", "t_dest", null, null, List.of(), List.of(), List.of(), null)));
+
+        assertEquals("anon", result.get("nickname"));
+    }
+
+    @Test
+    void sqlQueryWiredThroughTableMappingSqlTransforms() {
+        // Verify the full TableMapping.sqlTransforms path works end-to-end
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("name", "name", List.of());
+        var tm = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null,
+                List.of("SELECT id, UPPER(name) AS name FROM __row__"));
+
+        var record = new HashMap<String, Object>();
+        record.put("id", "1");
+        record.put("name", "charlie");
+
+        // Full chain: FilterProcessor → SqlRowTransformProcessor → TransformProcessor
+        var chain = new FilterProcessor()
+                .andThen(new SqlRowTransformProcessor(tm))
+                .andThen(new TransformProcessor());
+
+        var result = chain.process(record, ctx(tm));
+        assertNotNull(result);
+        assertEquals("CHARLIE", result.get("name"));
+    }
+
+    @Test
+    void sqlQueryInvalidSqlThrows() {
+        var queries = List.of("THIS IS NOT SQL AT ALL !!!!");
+        var proc = new SqlRowTransformProcessor(queries);
+
+        var record = Map.<String, Object>of("id", "1", "name", "x");
+        assertThrows(SqlRowTransformProcessor.SqlRowTransformException.class,
+                () -> proc.process(record, ctx(
+                        new TableMapping("t", "t_dest", null, null,
+                                List.of(), List.of(), List.of(), null))));
+    }
 }

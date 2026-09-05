@@ -71,6 +71,9 @@ public class TransformProcessor implements RecordProcessor {
                 yield EXPRESSION_EVALUATOR.evaluate(expr, value, record);
             }
             case IGNORE -> value;
+            // SQL_QUERY operates at the whole-row level in SqlRowTransformProcessor
+            // and is not applied per-column; pass the value through unchanged.
+            case SQL_QUERY -> value;
         };
     }
 }

@@ -237,6 +237,7 @@ public class PipelineDesignerService {
             case EXPRESSION -> "Expression: " + tr.parameters().get("expression");
             case IGNORE -> "Ignored";
             case SUBSTRING -> "Substring(start=" + tr.parameters().get("start") + ")";
+            case SQL_QUERY -> "SQL query: " + tr.parameters().get("query");
         };
     }
 }
