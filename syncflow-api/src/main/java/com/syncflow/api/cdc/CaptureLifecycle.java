@@ -14,6 +14,7 @@ import com.syncflow.api.metadata.ConnectorTypeMapper;
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.core.cdc.CaptureStatus;
 import com.syncflow.core.cdc.publisher.BoundedQueueEventPublisher;
+import com.syncflow.core.cdc.publisher.CircuitBreakerEventPublisher;
 import com.syncflow.core.cdc.publisher.EventPublisher;
 import com.syncflow.core.pipeline.mapping.TableMapping;
 import com.syncflow.core.registry.ConnectorRegistry;
@@ -115,7 +116,10 @@ public class CaptureLifecycle {
         var config = ConnectionMapper.toConfig(conn);
         // Key the Debezium offset file (and any connector state) per pipeline so
         // multiple pipelines on the same database don't share/corrupt position.
-        var ctx = new ConnectorContext(config, Map.of("pipelineId", pipelineId));
+        // Include tenant_id for partition routing in the debezium_offsets table (V16).
+        var ctx = new ConnectorContext(config, Map.of(
+                "pipelineId", pipelineId,
+                "tenantId", tenantContext.tenantId().value()));
 
         // pre-flight validation
         var validation = connector.validate(ctx);
@@ -300,7 +304,14 @@ public class CaptureLifecycle {
 
     /**
      * Task #7 bridge: when Kafka is enabled, provision topics and return a
-     * KafkaEventPublisher; otherwise fall back to BoundedQueueEventPublisher.
+     * KafkaEventPublisher; otherwise fall back to BoundedQueueEventPublisher
+     * wrapped in a CircuitBreakerEventPublisher.
+     *
+     * <p>
+     * The circuit breaker guards the publish() call path. When the downstream
+     * write path (SyncOrchestrator → DestinationRouter) is failing, the circuit
+     * opens and new CDC events are rejected fast rather than piling up in the
+     * bounded queue, giving the destination time to recover without OOM risk.
      */
     private EventPublisher buildPublisher(String pipelineId, List<TableMapping> tableMappings) {
         if (kafkaProperties.map(KafkaProperties::isEnabled).orElse(false)) {
@@ -313,8 +324,25 @@ public class CaptureLifecycle {
             log.info("Using KafkaEventPublisher for pipeline={} tables={}", pipelineId, tables);
             return new KafkaEventPublisher(pipelineId, props, objectMapper, meterRegistry);
         }
-        log.info("Using BoundedQueueEventPublisher for pipeline={} (Kafka disabled)", pipelineId);
-        return new BoundedQueueEventPublisher();
+        // Bounded queue wrapped in a Resilience4j circuit breaker (F7).
+        // The circuit opens on ≥ 50 % failures in a 10-event window, staying open
+        // for 30 s. While open, publish() calls are rejected immediately (counted
+        // in metrics via the CB event listener) rather than blocking the Debezium
+        // engine thread.
+        var inner = new BoundedQueueEventPublisher();
+        var cb = new CircuitBreakerEventPublisher(pipelineId, inner);
+        // Bind this pipeline's circuit breaker metrics to the shared Micrometer
+        // registry. Uses the CB's Micrometer event publisher so state changes
+        // (OPEN/HALF_OPEN/CLOSED) appear as gauge metrics in Prometheus/Grafana.
+        cb.circuitBreaker().getEventPublisher()
+                .onStateTransition(e -> meterRegistry.counter(
+                        "syncflow.cdc.circuit_breaker.transitions",
+                        "pipeline", pipelineId,
+                        "from", e.getStateTransition().getFromState().name(),
+                        "to", e.getStateTransition().getToState().name()).increment());
+        log.info("Using CircuitBreakerEventPublisher(BoundedQueue) for pipeline={} (Kafka disabled)",
+                pipelineId);
+        return cb;
     }
 
     /**

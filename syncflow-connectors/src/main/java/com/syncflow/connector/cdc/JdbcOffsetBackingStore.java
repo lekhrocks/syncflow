@@ -21,26 +21,33 @@ import java.util.concurrent.Future;
 /**
  * Postgres-backed {@link OffsetBackingStore} for Debezium.
  * <p>
- * Persists connector offsets in the {@code cdc_offsets} table (the same table
- * the control-plane {@code OffsetStore} writes) instead of the ephemeral
- * {@code /tmp} file used by {@code FileOffsetBackingStore}. Offsets therefore
- * survive pod restarts and reschedules — no re-processing or missed events.
+ * Persists connector offsets in the {@code debezium_offsets} table instead of
+ * the ephemeral {@code /tmp} file used by {@code FileOffsetBackingStore}.
+ * Offsets therefore survive pod restarts — no re-processing or missed events.
+ * <p>
+ * As of migration V16 the table is partitioned by {@code tenant_id}. This store
+ * reads the {@code offset.storage.jdbc.tenant_id} property (set per pipeline in
+ * {@link DebeziumCdcConnector}) and stamps every row with that UUID so writes
+ * land in the correct partition. The ON CONFLICT target has been updated to the
+ * composite key {@code (tenant_id, offset_key)}.
  * <p>
  * Configured by the properties prefixed {@code offset.storage.jdbc.*} set in
- * {@link DebeziumCdcConnector#startCDC}; the row key is the connector's own
- * offset key (namespace + partition), stored JSON-encoded by Kafka Connect.
- * <p>
- * This store is plain JDBC (no JPA) so the connector module keeps no Spring
- * Data dependency; the JDBC driver is already on the module classpath.
+ * {@link DebeziumCdcConnector#startCDC}.
  */
 public class JdbcOffsetBackingStore implements OffsetBackingStore {
 
     private static final Logger log = LoggerFactory.getLogger(JdbcOffsetBackingStore.class);
 
+    /**
+     * System-tenant UUID — used for legacy rows and when no tenant is configured.
+     */
+    private static final String SYSTEM_TENANT = "00000000-0000-0000-0000-000000000000";
+
     private String jdbcUrl;
     private String jdbcUser;
     private String jdbcPassword;
     private String tableName = "cdc_offsets";
+    private String tenantId = SYSTEM_TENANT;
 
     // In-memory cache of offsets read at start() so get() never hits the DB for
     // already-loaded partitions; writes are batched into set() then flushed.
@@ -55,6 +62,13 @@ public class JdbcOffsetBackingStore implements OffsetBackingStore {
         var table = stringValue(originals, "table.name", null);
         if (table != null) {
             tableName = table;
+        }
+        // tenant_id: NEW (as of V16 migration). Per-pipeline tenant isolation.
+        // Defaults to system tenant if not set (for backwards compatibility with
+        // pre-V16 deployments that have not yet configured per-pipeline tenant IDs).
+        var tenant = stringValue(originals, "tenant_id", SYSTEM_TENANT);
+        if (tenant != null) {
+            tenantId = tenant;
         }
         if (jdbcUrl == null) {
             throw new IllegalStateException(
@@ -104,14 +118,15 @@ public class JdbcOffsetBackingStore implements OffsetBackingStore {
             try (var conn = connection();
                     var upsert = conn.prepareStatement(
                             "INSERT INTO " + tableName
-                                    + " (offset_key, offset_data) VALUES (?, ?) "
-                                    + "ON CONFLICT (offset_key) DO UPDATE SET offset_data = EXCLUDED.offset_data")) {
+                                    + " (tenant_id, offset_key, offset_data) VALUES (?, ?, ?) "
+                                    + "ON CONFLICT (tenant_id, offset_key) DO UPDATE SET offset_data = EXCLUDED.offset_data")) {
                 for (var entry : values.entrySet()) {
                     var key = entry.getKey().duplicate();
                     var value = entry.getValue() != null ? entry.getValue().duplicate() : null;
                     cache.put(key, value);
-                    upsert.setBytes(1, toDbBytes(key));
-                    upsert.setBytes(2, value != null ? toDbBytes(value) : new byte[0]);
+                    upsert.setObject(1, java.util.UUID.fromString(tenantId));
+                    upsert.setBytes(2, toDbBytes(key));
+                    upsert.setBytes(3, value != null ? toDbBytes(value) : new byte[0]);
                     upsert.addBatch();
                 }
                 upsert.executeBatch();

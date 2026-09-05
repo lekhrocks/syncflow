@@ -183,7 +183,8 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
 
         // Durable offset store: Postgres-backed (survives pod restarts/reschedules).
         // Plain JDBC — no JPA — so the connector module stays Spring-Data-free.
-        // The table is created by Flyway migration V13 (debezium_offsets).
+        // The table is created by Flyway migration V13 (debezium_offsets), then
+        // partitioned by V16. Tenant_id (if provided) routes to the correct partition.
         debeziumProps.setProperty("offset.storage",
                 "com.syncflow.connector.cdc.JdbcOffsetBackingStore");
         debeziumProps.setProperty("offset.storage.jdbc.url",
@@ -191,6 +192,10 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
         debeziumProps.setProperty("offset.storage.jdbc.user", config.username());
         debeziumProps.setProperty("offset.storage.jdbc.password", config.password());
         debeziumProps.setProperty("offset.storage.jdbc.table.name", "debezium_offsets");
+        // V16 offset-store partitioning: tenant_id for partition routing.
+        var tenantId = (String) context.properties().getOrDefault("tenantId",
+                "00000000-0000-0000-0000-000000000000");
+        debeziumProps.setProperty("offset.storage.jdbc.tenant_id", tenantId);
         debeziumProps.setProperty("offset.flush.interval.ms", "5000");
 
         debeziumProps.setProperty("topic.prefix", "syncflow");
