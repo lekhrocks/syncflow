@@ -1,6 +1,7 @@
 package com.syncflow.api.sync;
 
 import com.syncflow.api.cdc.CaptureLifecycle;
+import com.syncflow.api.config.MetricsHelper;
 import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.api.runtimestate.RuntimeStateJson;
 import com.syncflow.api.sse.StatusBroadcaster;
@@ -222,15 +223,15 @@ public class SyncOrchestrator {
         TenantContext.require(tenantContext);
         // Distinguish ingress from dispatch: helps dashboards see backpressure
         // when the worker can't keep up (high submit, low dispatch).
-        meterRegistry.counter("syncflow.sync.events.ingested",
+        MetricsHelper.increment(meterRegistry, "syncflow.sync.events.ingested",
                 "pipeline", pipelineId,
-                "operation", event.operation().name()).increment();
+                "operation", event.operation().name());
         var queue = eventQueues.get(key(tenantContext.tenantId().value(), pipelineId));
         if (queue == null) {
             // Pipeline not started — count the drop so dashboards see backpressure.
-            meterRegistry.counter("syncflow.sync.events.dropped",
+            MetricsHelper.increment(meterRegistry, "syncflow.sync.events.dropped",
                     "pipeline", pipelineId,
-                    "reason", "pipeline_not_running").increment();
+                    "reason", "pipeline_not_running");
             return;
         }
         var accepted = queue.offer(event);
@@ -238,9 +239,9 @@ public class SyncOrchestrator {
             // Queue is at capacity: emit backpressure signal + DLQ the event.
             // Without DLQ we'd silently drop; that's worse than an explicit
             // failure because it breaks at-least-once delivery semantics.
-            meterRegistry.counter("syncflow.sync.events.dropped",
+            MetricsHelper.increment(meterRegistry, "syncflow.sync.events.dropped",
                     "pipeline", pipelineId,
-                    "reason", "queue_full").increment();
+                    "reason", "queue_full");
             FailureReason.permanentError("queue full")
                     .toString();
             // The DLQ add needs the event + a tenant context. The event
@@ -320,10 +321,10 @@ public class SyncOrchestrator {
                             log.warn("Sync {} received CDC event for unmapped table '{}' — pipeline.tableMappings()={}",
                                     pipelineId, unmappedTable, mappingByTable.keySet());
                         }
-                        meterRegistry.counter("syncflow.sync.events.skipped",
+                        MetricsHelper.increment(meterRegistry, "syncflow.sync.events.skipped",
                                 "pipeline", pipelineId,
                                 "reason", "unmapped_table",
-                                "table", unmappedTable).increment();
+                                "table", unmappedTable);
                         continue;
                     }
                     var pending = processEvent(tenantContext, pipelineId, event, mapping, destConnectionId,
@@ -331,9 +332,9 @@ public class SyncOrchestrator {
                     if (pending != null) {
                         pendingIds.add(pending);
                     }
-                    meterRegistry.counter("syncflow.sync.events.dispatched",
+                    MetricsHelper.increment(meterRegistry, "syncflow.sync.events.dispatched",
                             "pipeline", pipelineId,
-                            "table", mapping.sourceTable()).increment();
+                            "table", mapping.sourceTable());
                 }
 
                 // Flush the accumulated writes as one batched DB operation.
@@ -356,8 +357,8 @@ public class SyncOrchestrator {
                 }
 
                 meterRegistry.gauge("syncflow.sync.queue.size", queue, BlockingQueue::size);
-                meterRegistry.counter("syncflow.sync.events.processed",
-                        "pipeline", pipelineId).increment(eventsThisBatch.size());
+                MetricsHelper.increment(meterRegistry, "syncflow.sync.events.processed", eventsThisBatch.size(),
+                        "pipeline", pipelineId);
 
                 var stats = statsBuilder.build();
                 Optional.ofNullable(findByPipeline(pipelineId, tenantContext))
@@ -371,8 +372,8 @@ public class SyncOrchestrator {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                meterRegistry.counter("syncflow.sync.errors",
-                        "pipeline", pipelineId).increment();
+                MetricsHelper.increment(meterRegistry, "syncflow.sync.errors",
+                        "pipeline", pipelineId);
             }
         }
 

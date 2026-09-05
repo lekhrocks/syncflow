@@ -9,7 +9,7 @@ import com.syncflow.core.model.TransformationConfiguration;
 import com.syncflow.core.registry.ConnectorRegistry;
 import com.syncflow.core.repository.PipelineRepository;
 import com.syncflow.core.spi.ConnectorContext;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -107,10 +107,10 @@ public class PipelineService {
         return saved;
     }
 
-    public ValidationResult validateConnection(ConnectionConfiguration config) {
+    public ConnectorValidationResult validateConnection(ConnectionConfiguration config) {
         var connector = connectorRegistry.get(config.connectorType());
         if (connector.isEmpty()) {
-            return ValidationResult.failed(
+            return ConnectorValidationResult.failed(
                     List.of("No connector registered for type: " + config.connectorType()));
         }
         var ctx = new ConnectorContext(config, null);

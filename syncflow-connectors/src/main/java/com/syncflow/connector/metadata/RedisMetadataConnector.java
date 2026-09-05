@@ -13,7 +13,7 @@ import com.syncflow.core.spi.ConnectorCapabilities;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.ConnectorHealth;
 import com.syncflow.core.spi.SnapshotCapableConnector;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -51,8 +51,8 @@ public class RedisMetadataConnector implements SnapshotCapableConnector {
     }
 
     @Override
-    public ValidationResult validate(ConnectorContext ctx) {
-        return ValidationResult.ok();
+    public ConnectorValidationResult validate(ConnectorContext ctx) {
+        return ConnectorValidationResult.ok();
     }
 
     @Override

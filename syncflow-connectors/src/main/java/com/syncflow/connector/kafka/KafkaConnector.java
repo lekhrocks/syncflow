@@ -5,7 +5,7 @@ import com.syncflow.core.spi.Connector;
 import com.syncflow.core.spi.ConnectorCapabilities;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.ConnectorHealth;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.slf4j.Logger;
@@ -67,7 +67,7 @@ public class KafkaConnector implements Connector {
      * 2. Confirm at least one broker is reachable
      */
     @Override
-    public ValidationResult validate(ConnectorContext ctx) {
+    public ConnectorValidationResult validate(ConnectorContext ctx) {
         var errors = new ArrayList<String>();
         var servers = bootstrapServers(ctx);
 
@@ -91,7 +91,7 @@ public class KafkaConnector implements Connector {
             errors.add("Cannot reach Kafka broker(s) at " + servers + ": " + e.getMessage());
         }
 
-        return errors.isEmpty() ? ValidationResult.ok() : ValidationResult.failed(errors);
+        return errors.isEmpty() ? ConnectorValidationResult.ok() : ConnectorValidationResult.failed(errors);
     }
 
     @Override

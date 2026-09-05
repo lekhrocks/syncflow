@@ -169,7 +169,7 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
         given()
                 .when().get("/api/workflows/nonexistent")
                 .then()
-                .statusCode(500); // NoSuchElementException
+                .statusCode(404); // NoSuchElementException → 404
     }
 
     @Test
@@ -178,6 +178,6 @@ class WorkflowApiIntegrationTest extends AbstractIntegrationTest {
                 .header("Authorization", "Bearer " + adminToken("default"))
                 .when().post("/api/workflows/nonexistent/cancel")
                 .then()
-                .statusCode(500);
+                .statusCode(404);
     }
 }

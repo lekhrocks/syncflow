@@ -1,5 +1,6 @@
 package com.syncflow.api.metadata;
 
+import com.syncflow.api.config.MetricsHelper;
 import com.syncflow.api.connection.ConnectionMapper;
 import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.core.metadata.ColumnMetadata;
@@ -60,13 +61,13 @@ public class MetadataDiscoveryService {
             var connector = resolveConnector(connectionId);
             var result = (List<T>) op.apply(connector);
             var elapsed = sample.stop(timer);
-            meterRegistry.counter("syncflow.metadata.discovery.count",
-                    "type", type, "status", "success").increment();
+            MetricsHelper.increment(meterRegistry, "syncflow.metadata.discovery.count",
+                    "type", type, "status", "success");
             return MetadataResponse.of(connectionId, type, result, elapsed / 1_000_000, false);
         } catch (Exception e) {
             sample.stop(timer);
-            meterRegistry.counter("syncflow.metadata.discovery.count",
-                    "type", type, "status", "error").increment();
+            MetricsHelper.increment(meterRegistry, "syncflow.metadata.discovery.count",
+                    "type", type, "status", "error");
             return MetadataResponse.error(connectionId, type, e.getMessage());
         }
     }

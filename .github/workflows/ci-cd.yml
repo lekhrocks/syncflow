@@ -398,7 +398,9 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     needs: [docker-build, integration-tests, helm-validate]
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging'
+    # Disabled until staging environment is set up. Re-enable by restoring
+    # the original condition: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging'
+    if: false
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -455,7 +457,9 @@ jobs:
   deploy-prod:
     name: Deploy to Production
     needs: [docker-build, security-scan, helm-validate, integration-tests]
-    if: github.ref == 'refs/heads/main'
+    # Disabled until production environment is set up. Re-enable by restoring
+    # the original condition: github.ref == 'refs/heads/main'
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -2,6 +2,7 @@ package com.syncflow.api.kafka;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.syncflow.api.config.MetricsHelper;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.cdc.publisher.EventPublisher;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -64,23 +65,23 @@ public class KafkaEventPublisher implements EventPublisher {
                 if (ex != null) {
                     log.error("Failed to publish CDC event id={} to topic={} pipeline={}",
                             event.header().eventId(), topic, pipelineId, ex);
-                    meterRegistry.counter("syncflow.kafka.publish.error",
-                            "pipeline", pipelineId, "topic", topic).increment();
+                    MetricsHelper.increment(meterRegistry, "syncflow.kafka.publish.error",
+                            "pipeline", pipelineId, "topic", topic);
                 } else {
                     publishedCount.incrementAndGet();
                     log.debug("Published event id={} to topic={} partition={} offset={}",
                             event.header().eventId(), topic,
                             metadata.partition(), metadata.offset());
-                    meterRegistry.counter("syncflow.kafka.publish.success",
-                            "pipeline", pipelineId, "topic", topic).increment();
+                    MetricsHelper.increment(meterRegistry, "syncflow.kafka.publish.success",
+                            "pipeline", pipelineId, "topic", topic);
                 }
             });
 
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize CDC event id={} for pipeline={}",
                     event.header().eventId(), pipelineId, e);
-            meterRegistry.counter("syncflow.kafka.serialize.error",
-                    "pipeline", pipelineId).increment();
+            MetricsHelper.increment(meterRegistry, "syncflow.kafka.serialize.error",
+                    "pipeline", pipelineId);
         }
     }
 

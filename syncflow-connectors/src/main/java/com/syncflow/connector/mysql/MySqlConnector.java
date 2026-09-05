@@ -5,7 +5,7 @@ import com.syncflow.core.spi.Connector;
 import com.syncflow.core.spi.ConnectorCapabilities;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.ConnectorHealth;
-import com.syncflow.core.spi.ValidationResult;
+import com.syncflow.core.spi.ConnectorValidationResult;
 
 import java.util.List;
 import java.util.Map;
@@ -37,8 +37,8 @@ public class MySqlConnector implements Connector {
     }
 
     @Override
-    public ValidationResult validate(ConnectorContext ctx) {
-        return ValidationResult.ok();
+    public ConnectorValidationResult validate(ConnectorContext ctx) {
+        return ConnectorValidationResult.ok();
     }
 
     @Override

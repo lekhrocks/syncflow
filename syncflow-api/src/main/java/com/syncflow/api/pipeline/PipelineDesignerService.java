@@ -1,5 +1,6 @@
 package com.syncflow.api.pipeline;
 
+import com.syncflow.api.config.MetricsHelper;
 import com.syncflow.api.metadata.MetadataDiscoveryService;
 import com.syncflow.persistence.pipeline.entity.PipelineDesignEntity;
 import com.syncflow.persistence.pipeline.entity.PipelineDesignVersionEntity;
@@ -66,7 +67,7 @@ public class PipelineDesignerService {
         entity.setTenantId(tenantId());
         designRepo.save(entity);
         saveVersion(entity, design);
-        meterRegistry.counter("syncflow.pipeline.operations", "op", "create").increment();
+        MetricsHelper.increment(meterRegistry, "syncflow.pipeline.operations", "op", "create");
         return design;
     }
 
@@ -102,7 +103,7 @@ public class PipelineDesignerService {
         mapper.updateEntity(entity, updated, jsonMapper);
         designRepo.save(entity);
         saveVersion(entity, updated);
-        meterRegistry.counter("syncflow.pipeline.operations", "op", "update").increment();
+        MetricsHelper.increment(meterRegistry, "syncflow.pipeline.operations", "op", "update");
         return updated;
     }
 
@@ -111,7 +112,7 @@ public class PipelineDesignerService {
         var entity = designRepo.findByIdAndTenantId(id, tenantId())
                 .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
         designRepo.delete(entity);
-        meterRegistry.counter("syncflow.pipeline.operations", "op", "delete").increment();
+        MetricsHelper.increment(meterRegistry, "syncflow.pipeline.operations", "op", "delete");
     }
 
     public ValidationResult validate(String id) {
@@ -146,7 +147,7 @@ public class PipelineDesignerService {
                         target.audit().createdBy()));
         mapper.updateEntity(entity, rolled, jsonMapper);
         designRepo.save(entity);
-        meterRegistry.counter("syncflow.pipeline.operations", "op", "rollback").increment();
+        MetricsHelper.increment(meterRegistry, "syncflow.pipeline.operations", "op", "rollback");
         return rolled;
     }
 
