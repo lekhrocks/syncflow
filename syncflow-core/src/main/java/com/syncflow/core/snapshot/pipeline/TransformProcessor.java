@@ -1,6 +1,7 @@
 package com.syncflow.core.snapshot.pipeline;
 
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
+import com.syncflow.core.pipeline.transform.SqlExpressionEvaluator;
 import com.syncflow.core.pipeline.transform.TransformType;
 import com.syncflow.core.pipeline.transform.TransformationRule;
 
@@ -10,6 +11,9 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class TransformProcessor implements RecordProcessor {
+
+    // Stateless; safe to share across threads and calls.
+    private static final SqlExpressionEvaluator EXPRESSION_EVALUATOR = new SqlExpressionEvaluator();
 
     @Override
     public Map<String, Object> process(Map<String, Object> record, ProcessingContext ctx) {
@@ -62,7 +66,10 @@ public class TransformProcessor implements RecordProcessor {
             case LOWERCASE -> Objects.toString(value, "").toLowerCase();
             case TRIM -> Objects.toString(value, "").trim();
             case DEFAULT_VALUE -> value != null ? value : rule.parameters().get("value");
-            case EXPRESSION -> value; // ponytail: expression evaluation deferred
+            case EXPRESSION -> {
+                var expr = rule.parameters().get("expression");
+                yield EXPRESSION_EVALUATOR.evaluate(expr, value, record);
+            }
             case IGNORE -> value;
         };
     }

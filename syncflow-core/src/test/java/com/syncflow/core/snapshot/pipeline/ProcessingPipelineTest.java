@@ -11,6 +11,7 @@ import com.syncflow.core.pipeline.filter.FilterOperator;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
 import com.syncflow.core.pipeline.mapping.PrimaryKeyMapping;
 import com.syncflow.core.pipeline.mapping.TableMapping;
+import com.syncflow.core.pipeline.transform.SqlExpressionEvaluator;
 import com.syncflow.core.pipeline.transform.TransformationRule;
 import org.junit.jupiter.api.Test;
 
@@ -22,6 +23,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProcessingPipelineTest {
 
@@ -182,5 +184,151 @@ class ProcessingPipelineTest {
         assertEquals("john@example.com", result.get("email"));
         assertNull(result.get("deleted"));
         assertEquals("John doe", result.get("fullName"));
+    }
+
+    // -------------------------------------------------------------------------
+    // EXPRESSION (SpEL) tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    void expressionUpperCaseViaSpEL() {
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("name", "name_upper",
+                List.of(TransformationRule.expression("#value?.toString()?.toUpperCase()")));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", 1);
+        record.put("name", "alice");
+
+        var result = new TransformProcessor().process(record, ctx(mapping));
+        assertEquals("ALICE", result.get("name_upper"));
+    }
+
+    @Test
+    void expressionConcatenateRowFields() {
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("full_name", "full_name",
+                List.of(TransformationRule.expression("#row['first_name'] + ' ' + #row['last_name']")));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", 1);
+        record.put("first_name", "Jane");
+        record.put("last_name", "Smith");
+        record.put("full_name", "");
+
+        var result = new TransformProcessor().process(record, ctx(mapping));
+        assertEquals("Jane Smith", result.get("full_name"));
+    }
+
+    @Test
+    void expressionConditionalDefault() {
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("nickname", "nickname",
+                List.of(TransformationRule.expression("#value != null ? #value : 'anonymous'")));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+        var transform = new TransformProcessor();
+        var ctx = ctx(mapping);
+
+        // non-null value: pass through unchanged
+        var withValue = new HashMap<String, Object>();
+        withValue.put("id", 1);
+        withValue.put("nickname", "Sparky");
+        assertEquals("Sparky", transform.process(withValue, ctx).get("nickname"));
+
+        // null value: conditional yields the fallback literal
+        var withNull = new HashMap<String, Object>();
+        withNull.put("id", 2);
+        withNull.put("nickname", null);
+        assertEquals("anonymous", transform.process(withNull, ctx).get("nickname"));
+    }
+
+    @Test
+    void expressionArithmetic() {
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("price", "price_with_tax",
+                List.of(TransformationRule.expression("#value * 1.1")));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", 1);
+        record.put("price", 100.0);
+
+        var result = new TransformProcessor().process(record, ctx(mapping));
+        assertEquals(110.0, (Double) result.get("price_with_tax"), 0.001);
+    }
+
+    @Test
+    void expressionSubstring() {
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("code", "prefix",
+                List.of(TransformationRule.expression("#value?.toString()?.substring(0, 3)")));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", 1);
+        record.put("code", "ABCDEF");
+
+        var result = new TransformProcessor().process(record, ctx(mapping));
+        assertEquals("ABC", result.get("prefix"));
+    }
+
+    @Test
+    void expressionNullValueSafeNavigation() {
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        // ?. safe-navigation: each link in the chain uses ?. so null short-circuits
+        var cm = new ColumnMapping("name", "name_upper",
+                List.of(TransformationRule.expression("#value?.toString()?.toUpperCase()")));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+
+        var record = new HashMap<String, Object>();
+        record.put("id", 1);
+        record.put("name", null);
+
+        var result = new TransformProcessor().process(record, ctx(mapping));
+        assertNull(result.get("name_upper"));
+    }
+
+    @Test
+    void expressionChainedWithOtherRules() {
+        // EXPRESSION followed by UPPERCASE to demonstrate rule chaining still works
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("status", "status_label", List.of(
+                // first: map code to label
+                TransformationRule.expression(
+                        "#value == 'A' ? 'active' : (#value == 'I' ? 'inactive' : 'unknown')"),
+                // then: uppercase the result
+                TransformationRule.uppercase()));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+        var transform = new TransformProcessor();
+        var ctx = ctx(mapping);
+
+        var r1 = new HashMap<String, Object>();
+        r1.put("id", 1);
+        r1.put("status", "A");
+        assertEquals("ACTIVE", transform.process(r1, ctx).get("status_label"));
+
+        var r2 = new HashMap<String, Object>();
+        r2.put("id", 2);
+        r2.put("status", "I");
+        assertEquals("INACTIVE", transform.process(r2, ctx).get("status_label"));
+
+        var r3 = new HashMap<String, Object>();
+        r3.put("id", 3);
+        r3.put("status", "X");
+        assertEquals("UNKNOWN", transform.process(r3, ctx).get("status_label"));
+    }
+
+    @Test
+    void expressionInvalidSyntaxThrows() {
+        var pk = new PrimaryKeyMapping(List.of("id"), List.of("id"));
+        var cm = new ColumnMapping("name", "name",
+                List.of(TransformationRule.expression("this is not valid spel {{{")));
+        var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
+
+        var record = Map.<String, Object>of("id", 1, "name", "test");
+        assertThrows(SqlExpressionEvaluator.ExpressionEvaluationException.class,
+                () -> new TransformProcessor().process(record, ctx(mapping)));
     }
 }
