@@ -27,10 +27,7 @@ import org.springframework.stereotype.Component;
  * datasource is used instead.
  */
 @Component
-@ConditionalOnProperty(
-    name = "syncflow.region.replication-enabled",
-    havingValue = "true",
-    matchIfMissing = false)
+@ConditionalOnProperty(name = "syncflow.region.replication-enabled", havingValue = "true", matchIfMissing = false)
 public class RegionalDataSourceFactory {
 
     private static final Logger logger = LoggerFactory.getLogger(RegionalDataSourceFactory.class);

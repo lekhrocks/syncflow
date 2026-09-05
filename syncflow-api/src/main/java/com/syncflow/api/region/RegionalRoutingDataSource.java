@@ -31,10 +31,7 @@ import org.springframework.stereotype.Component;
  * the correct pool.
  */
 @Component
-@ConditionalOnProperty(
-    name = "syncflow.region.replication-enabled",
-    havingValue = "true",
-    matchIfMissing = false)
+@ConditionalOnProperty(name = "syncflow.region.replication-enabled", havingValue = "true", matchIfMissing = false)
 public class RegionalRoutingDataSource extends AbstractRoutingDataSource {
 
     private final RegionalDataSourceFactory regionalDataSourceFactory;
