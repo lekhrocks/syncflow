@@ -1,7 +1,6 @@
 package com.syncflow.api.snapshot;
 
 import com.syncflow.api.config.RuntimeProperties;
-import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.pipeline.PipelineDesign;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
 import com.syncflow.core.pipeline.mapping.TableMapping;
@@ -35,6 +34,7 @@ final class SnapshotWorker {
 
     @FunctionalInterface
     interface TriConsumer<A, B, C> {
+
         void accept(A a, B b, C c);
     }
 
