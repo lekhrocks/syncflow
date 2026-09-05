@@ -9,6 +9,9 @@ dependencies {
     api "org.springframework:spring-context:6.2.6"
     api libs.hibernate.validator
     api "org.slf4j:slf4j-api:2.0.17"
+    // Resilience4j core — circuit breaker for the CDC event publisher.
+    // Only the bare core lib; no Spring Boot auto-config bloat in this module.
+    api libs.resilience4j.circuitbreaker
 
     compileOnly libs.lombok
     annotationProcessor libs.lombok
