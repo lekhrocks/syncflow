@@ -1,0 +1,95 @@
+# Example multi-region configuration for SyncFlow
+#
+# Deploy this to each region's ConfigMap:
+# - k8s/overlays/us-east-1/config/application.yml
+# - k8s/overlays/eu-west-1/config/application.yml
+# - k8s/overlays/ap-southeast-1/config/application.yml
+
+syncflow:
+  region:
+    # Current region where this pod is running
+    local-region: us-east-1
+
+    # Primary region for writes (all writes go here; replicas are read-only)
+    primary-region: us-east-1
+
+    # Enable multi-region replication
+    replication-enabled: true
+
+    # Auto-promote standby on primary failure
+    auto-failover: true
+
+    # Health check interval
+    health-check-interval: 30s
+
+    # Number of consecutive health check failures before failover
+    failover-threshold: 3
+
+    # Maximum acceptable replication lag (milliseconds) before failover abort
+    max-replication-lag-ms: 5000
+
+    # Regional PostgreSQL connections
+    regions:
+      us-east-1:
+        # Connection string to US-East primary database
+        connection-string: "postgresql://syncflow:password@us-east-db.example.com:5432/syncflow"
+        # This region can accept writes
+        write-enabled: true
+        # Connection timeout (milliseconds)
+        connection-timeout-ms: 5000
+        # Statement timeout (milliseconds)
+        statement-timeout-ms: 30000
+
+      eu-west-1:
+        # Connection string to EU-West database (read replica from US-East primary)
+        connection-string: "postgresql://syncflow:password@eu-west-db.example.com:5432/syncflow"
+        # This region is read-only (during normal operation)
+        write-enabled: false
+        connection-timeout-ms: 5000
+        statement-timeout-ms: 30000
+
+      ap-southeast-1:
+        # Connection string to AP-Southeast database (read replica)
+        connection-string: "postgresql://syncflow:password@ap-southeast-db.example.com:5432/syncflow"
+        write-enabled: false
+        connection-timeout-ms: 5000
+        statement-timeout-ms: 30000
+
+  # Persistence layer
+  persistence:
+    database:
+      jdbc-url: "jdbc:postgresql://localhost:5432/syncflow"
+      username: "syncflow"
+      password: "${DB_PASSWORD}"  # From secret
+      maximum-pool-size: 20
+      minimum-idle: 2
+
+  # API server
+  api:
+    port: 8080
+    context-path: /api
+
+---
+# Spring Boot actuator health endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus
+      base-path: /actuator
+
+  # Include regional health indicator
+  health:
+    defaults:
+      enabled: true
+    regional:
+      enabled: true
+
+---
+# Logging with region context
+logging:
+  level:
+    com.syncflow.api.region: DEBUG
+    com.syncflow.api.cdc: INFO
+  pattern:
+    console: "[%thread] [%X{region}] %-5level %logger{36} - %msg%n"

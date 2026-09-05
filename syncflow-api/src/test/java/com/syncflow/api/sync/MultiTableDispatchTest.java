@@ -6,6 +6,7 @@ import com.syncflow.api.pipeline.PipelineDesignerService;
 import com.syncflow.api.runtimestate.RuntimeStateJson;
 import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.persistence.sync.repository.SyncJobRepository;
+import com.syncflow.persistence.sync.repository.EventQueueSnapshotRepository;
 import com.syncflow.tenant.TenantContext;
 import com.syncflow.tenant.TenantId;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -162,6 +163,7 @@ class MultiTableDispatchTest {
                 .when(syncJobRepo.findByTenantIdAndPipelineId(org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(Optional.empty());
+        var snapshotRepo = org.mockito.Mockito.mock(EventQueueSnapshotRepository.class);
         var idempotencyStore = org.mockito.Mockito.mock(EventIdempotencyStore.class);
         org.mockito.Mockito.when(idempotencyStore.isProcessed(org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(false);
@@ -185,6 +187,7 @@ class MultiTableDispatchTest {
                 retryEngine,
                 dlq,
                 syncJobRepo,
+                snapshotRepo,
                 new RuntimeStateJson(objectMapper),
                 meter,
                 broadcaster,

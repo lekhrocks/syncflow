@@ -39,7 +39,9 @@ class ChunkedSnapshotCorrectnessTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("testdb")
             .withUsername("testuser")
-            .withPassword("testpass");
+            .withPassword("testpass")
+            .withCommand("postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=5", "-c",
+                    "max_replication_slots=5");
 
     static PostgresMetadataConnector connector = new PostgresMetadataConnector();
     static ConnectorContext ctx;

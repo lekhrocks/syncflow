@@ -43,7 +43,9 @@ class PgMongoSampleE2eTest extends AbstractIntegrationTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("sampledb")
             .withUsername("testuser")
-            .withPassword("testpass");
+            .withPassword("testpass")
+            .withCommand("postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=5", "-c",
+                    "max_replication_slots=5");
 
     @Container
     static GenericContainer<?> mongodb = new GenericContainer<>(DockerImageName.parse("mongo:7.0"))
