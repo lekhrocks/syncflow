@@ -22,6 +22,7 @@ import com.syncflow.core.pipeline.mapping.ColumnMapping;
 import com.syncflow.core.pipeline.mapping.TableMapping;
 import com.syncflow.core.snapshot.pipeline.FilterProcessor;
 import com.syncflow.core.snapshot.pipeline.ProcessingContext;
+import com.syncflow.core.snapshot.pipeline.SqlRowTransformProcessor;
 import com.syncflow.core.snapshot.pipeline.TransformProcessor;
 import com.syncflow.core.sync.FailureReason;
 import com.syncflow.core.sync.SyncJob;
@@ -428,14 +429,15 @@ public class SyncOrchestrator {
                 return null;
             }
             var pCtx = new ProcessingContext(null, mapping);
-            var filter = new FilterProcessor();
-            var transform = new TransformProcessor();
-            var filtered = filter.process(payload, pCtx);
+            var chain = new FilterProcessor()
+                    .andThen(new SqlRowTransformProcessor(mapping))
+                    .andThen(new TransformProcessor());
+            var filtered = chain.process(payload, pCtx);
             if (filtered == null) {
                 stats.skippedEvents.incrementAndGet();
                 return null;
             }
-            var transformed = transform.process(filtered, pCtx);
+            var transformed = filtered;
 
             if (event.operation() == CDCOperation.DELETE) {
                 var pkMap = event.payload().primaryKeys();

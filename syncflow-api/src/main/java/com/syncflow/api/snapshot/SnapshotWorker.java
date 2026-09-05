@@ -10,6 +10,7 @@ import com.syncflow.core.snapshot.SnapshotCheckpoint;
 import com.syncflow.core.snapshot.SnapshotJob;
 import com.syncflow.core.snapshot.pipeline.FilterProcessor;
 import com.syncflow.core.snapshot.pipeline.ProcessingContext;
+import com.syncflow.core.snapshot.pipeline.SqlRowTransformProcessor;
 import com.syncflow.core.snapshot.pipeline.TransformProcessor;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.SnapshotCapableConnector;
@@ -70,7 +71,9 @@ final class SnapshotWorker {
                 : tm.destinationCollection();
         var keyCols = tm.primaryKey() != null ? tm.primaryKey().destinationColumns() : null;
         var useUpsert = keyCols != null && !keyCols.isEmpty();
-        var chain = new FilterProcessor().andThen(new TransformProcessor());
+        var chain = new FilterProcessor()
+                .andThen(new SqlRowTransformProcessor(tm))
+                .andThen(new TransformProcessor());
 
         if (isCancelled.getAsBoolean()) {
             return;

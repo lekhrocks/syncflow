@@ -16,6 +16,11 @@ dependencies {
     compileOnly libs.lombok
     annotationProcessor libs.lombok
 
+    // H2 in-process SQL engine for SqlRowTransformProcessor (Phase 2).
+    // Scoped to 'api' so syncflow-api can also reference the processor class
+    // without re-declaring the dependency.
+    api "com.h2database:h2:2.3.232"
+
     testImplementation libs.junit.jupiter
     testImplementation libs.junit.platform.launcher
     testImplementation libs.mockito.core

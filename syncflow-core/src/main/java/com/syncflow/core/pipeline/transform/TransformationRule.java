@@ -53,4 +53,18 @@ public record TransformationRule(
         return new TransformationRule(TransformType.EXPRESSION,
                 Map.of("expression", expression), List.of());
     }
+
+    /**
+     * Creates a whole-row SQL projection rule executed inside H2.
+     * The {@code SELECT} must reference the virtual table {@code __row__}.
+     *
+     * <pre>{@code
+     * TransformationRule.sqlQuery(
+     *         "SELECT id, UPPER(name) AS name, price * 1.2 AS price FROM __row__")
+     * }</pre>
+     */
+    public static TransformationRule sqlQuery(String query) {
+        return new TransformationRule(TransformType.SQL_QUERY,
+                Map.of("query", query), List.of());
+    }
 }
