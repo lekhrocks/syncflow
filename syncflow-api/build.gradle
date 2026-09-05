@@ -44,6 +44,7 @@ dependencies {
     implementation libs.micrometer.registry.prometheus
     implementation libs.logback.classic
     implementation libs.mapstruct
+    implementation libs.hikari
     implementation "com.github.ben-manes.caffeine:caffeine:3.2.0"
     // CVE-2025-48924: Spring Boot 3.5.16's BOM pins commons-lang3 3.17.0
     // (vulnerable). Declare it directly at the patched 3.18.0 to override it.

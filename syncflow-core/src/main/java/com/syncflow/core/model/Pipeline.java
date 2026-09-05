@@ -32,6 +32,29 @@ public class Pipeline {
 
     private Instant updatedAt;
 
+    /**
+     * Preferred region for this pipeline (e.g., "us-east-1", "eu-west-1").
+     * Null means no regional preference.
+     */
+    private String preferredRegion;
+
+    /**
+     * Regional deployment strategy for this pipeline.
+     */
+    private RegionStrategy regionStrategy = RegionStrategy.ACTIVE_ACTIVE;
+
+    /**
+     * Strategy for regional pipeline deployment.
+     */
+    public enum RegionStrategy {
+        /** Run this pipeline in all regions (redundancy). */
+        ACTIVE_ACTIVE,
+        /** Run in primary region only; failover to standby on primary failure. */
+        PRIMARY_STANDBY,
+        /** Run in single specified region only (compliance, local data). */
+        LOCAL_ONLY
+    }
+
     public Pipeline() {
     }
 
@@ -112,5 +135,21 @@ public class Pipeline {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getPreferredRegion() {
+        return this.preferredRegion;
+    }
+
+    public void setPreferredRegion(String preferredRegion) {
+        this.preferredRegion = preferredRegion;
+    }
+
+    public RegionStrategy getRegionStrategy() {
+        return this.regionStrategy;
+    }
+
+    public void setRegionStrategy(RegionStrategy regionStrategy) {
+        this.regionStrategy = regionStrategy;
     }
 }
