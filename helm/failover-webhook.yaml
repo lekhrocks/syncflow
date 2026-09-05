@@ -1,0 +1,192 @@
+# SyncFlow failover webhook — triggered by Route53 health check or RegionalFailoverManager
+# 
+# Two paths:
+# 1. External: Route53 health check fails → SNS → webhook
+# 2. Internal: RegionalFailoverManager detects primary down → calls alertFailover() webhook
+#
+# Both notify all regions to promote standby and update client routing
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: syncflow-failover-webhook
+  namespace: default
+  labels:
+    app: syncflow
+    component: failover-webhook
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+  selector:
+    app: syncflow
+    component: failover-webhook
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: syncflow-failover-config
+  namespace: default
+data:
+  # Webhook configuration
+  webhook-config.yaml: |
+    # Webhook request from RegionalFailoverManager.alertFailover()
+    # POST https://syncflow-failover-webhook.default:8081/promote
+    # Body: {"oldPrimary": "us-east-1", "newPrimary": "us-west-2"}
+    
+    # This webhook:
+    # 1. Validates the request (check authorization token)
+    # 2. Publishes a "region.promoted" event to Kafka
+    # 3. All pods receive event and update their RegionalDataSourceFactory routing
+    # 4. Sends SNS notification to ops
+    # 5. Triggers Slack notification (optional)
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syncflow-failover-webhook
+  namespace: default
+  labels:
+    app: syncflow
+    component: failover-webhook
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: syncflow
+      component: failover-webhook
+  template:
+    metadata:
+      labels:
+        app: syncflow
+        component: failover-webhook
+    spec:
+      containers:
+        - name: webhook
+          image: syncflow:latest
+          imagePullPolicy: IfNotPresent
+          
+          # Run only the webhook component (main app still runs)
+          args:
+            - --component=failover-webhook
+            - --port=8081
+          
+          ports:
+            - name: http
+              containerPort: 8081
+          
+          env:
+            - name: SYNCFLOW_KAFKA_ENABLED
+              value: "true"
+            - name: SYNCFLOW_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka-cluster.kafka.svc.cluster.local:9092
+            - name: SYNCFLOW_WEBHOOK_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: syncflow-webhook-secrets
+                  key: auth-token
+            - name: AWS_REGION
+              value: us-east-1
+            - name: SNS_TOPIC_ARN
+              value: arn:aws:sns:us-east-1:ACCOUNT_ID:syncflow-failover-alerts
+          
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      
+      affinity:
+        # Spread webhooks across nodes
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["syncflow"]
+                topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: syncflow-webhook-secrets
+  namespace: default
+type: Opaque
+data:
+  # Base64-encoded auth token (generate with: openssl rand -base64 32)
+  auth-token: c29tZS1zZWNyZXQtdG9rZW4tYmFzZTY0LWVuY29kZWQ=
+
+---
+# External SNS subscription for failover alerts
+# Create in AWS Console or with Terraform:
+# 
+# aws sns subscribe \
+#   --topic-arn arn:aws:sns:us-east-1:ACCOUNT_ID:syncflow-failover-alerts \
+#   --protocol https \
+#   --notification-endpoint https://syncflow-failover-webhook.example.com/promote
+#
+# This routes Route53 health check failures → SNS → webhook
+
+---
+# Slack notification integration (optional)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: syncflow-slack-webhook
+  namespace: default
+type: Opaque
+stringData:
+  # Slack webhook URL for #ops-alerts channel
+  webhook-url: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+
+---
+# Example failover alert - triggered by Route53 health check
+# This goes to SNS topic: arn:aws:sns:us-east-1:ACCOUNT_ID:syncflow-failover-alerts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: failover-alert-example
+  namespace: default
+data:
+  # SNS message format from Route53 HealthCheckStatusChangeNotification
+  sns-message: |
+    {
+      "AWSAccountId": "123456789012",
+      "AutoPublished": true,
+      "EventSource": "aws:sns",
+      "EventVersion": "1.0",
+      "EventSubscriptionArn": "arn:aws:sns:us-east-1:123456789012:syncflow-failover-alerts:abcd1234",
+      "Message": "{\"AlarmName\":\"syncflow-primary-health-check\",\"NewStateValue\":\"ALARM\",\"NewStateReason\":\"Threshold Crossed: 1 out of 1 datapoints was less than the threshold (1)\",\"StateChangeTime\":\"2026-09-05T12:34:56.789Z\",\"Region\":\"US East (N. Virginia)\",\"AlarmArn\":\"arn:aws:cloudwatch:us-east-1:123456789012:alarm:syncflow-primary-health-check\",\"OldStateValue\":\"OK\",\"Trigger\":{\"MetricName\":\"HealthCheckStatus\",\"Namespace\":\"AWS/Route53\",\"Statistic\":\"Minimum\",\"Unit\":null,\"Dimensions\":[{\"name\":\"HealthCheckId\",\"value\":\"hc-syncflow-us-east-1-primary\"}],\"Period\":60,\"EvaluationPeriods\":1,\"Threshold\":1,\"ComparisonOperator\":\"LessThanThreshold\"}}",
+      "MessageId": "00000000-1111-2222-3333-444444444444",
+      "MessageAttributes": {},
+      "Timestamp": "2026-09-05T12:34:56.789Z",
+      "SignatureVersion": "1",
+      "Signature": "...",
+      "SigningCertURL": "https://sns.amazonaws.com/...",
+      "UnsubscribeURL": "https://sns.amazonaws.com/..."
+    }

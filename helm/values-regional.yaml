@@ -1,0 +1,135 @@
+# Helm values for multi-region SyncFlow deployment with automatic failover
+# Deploy to each region with different primary/replica configurations
+
+# Global settings
+global:
+  # Which SyncFlow version to deploy
+  image:
+    repository: syncflow
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # Database settings (same credentials across all regions due to logical replication)
+  database:
+    host: postgres.default.svc.cluster.local
+    port: 5432
+    name: syncflow
+    # Use external secret for credentials
+    secretName: syncflow-db-credentials
+    secretKeys:
+      username: db-user
+      password: db-password
+
+  # Regional configuration
+  region:
+    # Local region (set per deployment)
+    localRegion: us-east-1
+    
+    # All regions in the deployment (comma-separated)
+    allRegions: us-east-1,us-west-2,eu-west-1
+    
+    # Primary region for writes
+    primaryRegion: us-east-1
+    
+    # Enable multi-region replication
+    replicationEnabled: true
+    autoFailover: true
+    failoverThreshold: 3  # 3 consecutive health check failures
+    failoverCheckInterval: 30s
+
+# Application configuration
+application:
+  replicaCount: 3
+  
+  # Resource limits
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  # Environment variables
+  env:
+    SYNCFLOW_SYNC_QUEUE_CAPACITY: "10000"
+    SYNCFLOW_SYNC_MAX_BATCH_SIZE: "1000"
+    SYNCFLOW_SYNC_FLUSH_INTERVAL_MS: "5000"
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# Ingress configuration with health checks
+ingress:
+  enabled: true
+  className: nginx
+  
+  # Annotations for health check and failover
+  annotations:
+    nginx.ingress.kubernetes.io/health-check: "true"
+    nginx.ingress.kubernetes.io/health-check-path: "/actuator/health"
+    nginx.ingress.kubernetes.io/health-check-interval: "30s"
+    nginx.ingress.kubernetes.io/health-check-timeout: "10s"
+  
+  hosts:
+    - host: syncflow.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  
+  tls:
+    - secretName: syncflow-tls
+      hosts:
+        - syncflow.example.com
+
+# Health check configuration
+healthCheck:
+  livenessProbe:
+    httpGet:
+      path: /actuator/health
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /actuator/health/ready
+      port: 8080
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 2
+
+# Database backup and recovery (per region)
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retentionDays: 30
+
+# Monitoring and observability
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+  
+  # Regional-specific metrics labels
+  labels:
+    region: us-east-1
+    role: primary  # primary or replica
+
+# Pod disruption budget (ensure quorum during updates)
+podDisruptionBudget:
+  minAvailable: 2
+
+# Update strategy (rolling update with disruption budget)
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1

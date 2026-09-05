@@ -12,6 +12,7 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -115,6 +116,8 @@ public class KafkaCdcConsumer {
             KafkaConsumer<String, String> consumer,
             AtomicBoolean running,
             TenantContext tenantContext) {
+        MDC.put("pipeline_id", pipelineId);
+        MDC.put("tenant_id", tenantContext.tenantId().value());
         try {
             while (running.get()) {
                 var records = consumer.poll(POLL_TIMEOUT);
@@ -150,6 +153,8 @@ public class KafkaCdcConsumer {
                     "pipeline", pipelineId);
         } finally {
             consumer.close();
+            MDC.remove("pipeline_id");
+            MDC.remove("tenant_id");
             log.debug("Kafka consumer closed for pipeline={}", pipelineId);
         }
     }

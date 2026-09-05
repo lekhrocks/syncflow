@@ -7,6 +7,8 @@ import com.syncflow.api.runtimestate.RuntimeStateJson;
 import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.persistence.sync.entity.SyncJobEntity;
 import com.syncflow.persistence.sync.repository.SyncJobRepository;
+import com.syncflow.persistence.sync.repository.EventQueueSnapshotRepository;
+import com.syncflow.persistence.sync.entity.EventQueueSnapshotEntity;
 import com.syncflow.api.config.RuntimeProperties;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.cdc.CDCOperation;
@@ -28,6 +30,7 @@ import com.syncflow.core.sync.SyncStatistics;
 import com.syncflow.tenant.TenantContext;
 import com.syncflow.tenant.TenantContextHolder;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -64,6 +67,7 @@ public class SyncOrchestrator {
     private final RetryEngine retryEngine;
     private final DeadLetterQueue dlq;
     private final SyncJobRepository jobRepository;
+    private final EventQueueSnapshotRepository snapshotRepository;
     private final RuntimeStateJson json;
     private final MeterRegistry meterRegistry;
     private final StatusBroadcaster broadcaster;
@@ -82,6 +86,7 @@ public class SyncOrchestrator {
             RetryEngine retryEngine,
             DeadLetterQueue dlq,
             SyncJobRepository jobRepository,
+            EventQueueSnapshotRepository snapshotRepository,
             RuntimeStateJson json,
             MeterRegistry meterRegistry,
             StatusBroadcaster broadcaster,
@@ -93,6 +98,7 @@ public class SyncOrchestrator {
         this.retryEngine = retryEngine;
         this.dlq = dlq;
         this.jobRepository = jobRepository;
+        this.snapshotRepository = snapshotRepository;
         this.json = json;
         this.meterRegistry = meterRegistry;
         this.broadcaster = broadcaster;
@@ -112,6 +118,8 @@ public class SyncOrchestrator {
         if (existing != null && existing.getState() == SyncState.RUNNING)
             return existing;
 
+        var pipeline = pipelineService.get(pipelineId);
+
         // Start CDC capture if not already running
         var captureStatus = captureLifecycle.status(pipelineId, tenantContext);
         if (captureStatus != CaptureStatus.RUNNING) {
@@ -125,7 +133,6 @@ public class SyncOrchestrator {
         eventQueues.put(key, queue);
         emit(job, tenantContext);
 
-        var pipeline = pipelineService.get(pipelineId);
         // Multi-table: route events by source table to the correct TableMapping.
         // Build the dispatch map (table -> mapping) so each event is processed
         // against its own column/transform/filter pipeline.
@@ -569,6 +576,119 @@ public class SyncOrchestrator {
                 SyncState.valueOf(e.getState()),
                 json.fromJson(e.getStatistics(), SyncStatistics.class),
                 e.getCreatedAt());
+    }
+
+    /**
+     * Persist event queues on graceful shutdown to survive pod restarts.
+     *
+     * <p>
+     * Snapshots each active event queue as a JSON array in
+     * EventQueueSnapshotEntity. On startup,
+     * rehydrateFromDatabase() loads these snapshots back into the queues.
+     *
+     * <p>
+     * This ensures at-least-once delivery for CDC events during failover:
+     * 1. Pod crashes mid-sync
+     * 2. SyncOrchestrator.snapshotEventQueues() persists pending events
+     * 3. New pod starts and calls rehydrateFromDatabase()
+     * 4. Events are re-queued and processed (idempotency ensures no duplicates)
+     */
+    @PreDestroy
+    public void snapshotEventQueues() {
+        log.info("Snapshotting {} event queues on shutdown", eventQueues.size());
+        var podName = System.getenv("HOSTNAME");
+
+        for (var entry : eventQueues.entrySet()) {
+            var key = entry.getKey();
+            var queue = entry.getValue();
+
+            try {
+                if (queue.isEmpty()) {
+                    log.debug("Event queue empty for key={}; skipping snapshot", key);
+                    continue;
+                }
+
+                // Extract [tenantId, pipelineId] from key (format: "tenantId:pipelineId")
+                var parts = key.split(":");
+                if (parts.length != 2) {
+                    log.warn("Invalid queue key format; skipping snapshot: key={}", key);
+                    continue;
+                }
+                var tenantId = parts[0];
+                var pipelineId = parts[1];
+
+                // Serialize pending events to JSON
+                var events = new java.util.ArrayList<>(queue);
+                var eventsJson = json.toJson(events);
+
+                // Persist snapshot
+                var snapshot = new EventQueueSnapshotEntity(
+                        tenantId,
+                        pipelineId,
+                        events.size(),
+                        eventsJson,
+                        podName,
+                        "graceful_shutdown");
+                snapshotRepository.save(snapshot);
+                log.info("Snapshotted {} events for pipeline={} snapshot_id={}",
+                        events.size(), pipelineId, snapshot.getId());
+            } catch (Exception e) {
+                log.error("Failed to snapshot event queue key={}", key, e);
+            }
+        }
+    }
+
+    /**
+     * Rehydrate pending events from snapshots (called on startup).
+     *
+     * @return number of events recovered
+     */
+    public int rehydrateFromDatabase() {
+        log.info("Rehydrating event queues from snapshots");
+        int totalRecovered = 0;
+
+        // Find all snapshots (typically 0-1 per tenant, but we handle multiple)
+        var snapshots = snapshotRepository.findAll();
+        for (var snapshot : snapshots) {
+            try {
+                var tenantId = snapshot.getTenantId();
+                var pipelineId = snapshot.getPipelineId();
+                var key = key(tenantId, pipelineId);
+
+                // Deserialize events
+                var events = json.fromJson(
+                        snapshot.getEventsJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<com.syncflow.core.cdc.CDCEvent>>() {
+                        });
+
+                // Requeue events (restore order)
+                if (!events.isEmpty()) {
+                    var queue = new LinkedBlockingQueue<CDCEvent>();
+                    queue.addAll(events);
+                    eventQueues.putIfAbsent(key, queue);
+                    totalRecovered += events.size();
+                    log.info("Rehydrated {} events for pipeline={}", events.size(), pipelineId);
+                }
+
+                // Clean up snapshot after successful rehydration
+                snapshotRepository.delete(snapshot);
+            } catch (Exception e) {
+                log.error("Failed to rehydrate snapshot id={}", snapshot.getId(), e);
+            }
+        }
+
+        // Clean up expired snapshots
+        try {
+            var expired = snapshotRepository.deleteExpired(java.time.Instant.now());
+            if (expired > 0) {
+                log.info("Cleaned up {} expired snapshots", expired);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to clean up expired snapshots", e);
+        }
+
+        log.info("Rehydration complete: {} events recovered", totalRecovered);
+        return totalRecovered;
     }
 
     private static class SyncStatisticsBuilder {

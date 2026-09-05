@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 /**
@@ -76,25 +77,30 @@ public class RegionalFailoverManager {
     private void monitorPrimaryHealth() {
         var primaryRegion = regionalProperties.getPrimaryRegion();
         var currentPrimary = dataSourceFactory.getCurrentPrimaryRegion();
+        MDC.put("region", currentPrimary);
 
-        // Check current primary (may have been promoted)
-        if (isRegionHealthy(currentPrimary)) {
-            failureCounters.get(currentPrimary).set(0); // reset
-            return;
-        }
+        try {
+            // Check current primary (may have been promoted)
+            if (isRegionHealthy(currentPrimary)) {
+                failureCounters.get(currentPrimary).set(0); // reset
+                return;
+            }
 
-        // Primary failed
-        var failureCount = failureCounters.get(currentPrimary).incrementAndGet();
-        logger.warn(
-                "Primary region {} health check failed ({}{})",
-                currentPrimary,
-                failureCount,
-                " of " + regionalProperties.getFailoverThreshold());
+            // Primary failed
+            var failureCount = failureCounters.get(currentPrimary).incrementAndGet();
+            logger.warn(
+                    "Primary region {} health check failed ({}{})",
+                    currentPrimary,
+                    failureCount,
+                    " of " + regionalProperties.getFailoverThreshold());
 
-        if (failureCount >= regionalProperties.getFailoverThreshold() && !failoverInProgress) {
-            logger.error("Primary region {} failed {}x; initiating failover",
-                    currentPrimary, failureCount);
-            triggerFailover();
+            if (failureCount >= regionalProperties.getFailoverThreshold() && !failoverInProgress) {
+                logger.error("Primary region {} failed {}x; initiating failover",
+                        currentPrimary, failureCount);
+                triggerFailover();
+            }
+        } finally {
+            MDC.remove("region");
         }
     }
 
@@ -115,6 +121,8 @@ public class RegionalFailoverManager {
 
         failoverInProgress = true;
         var oldPrimary = dataSourceFactory.getCurrentPrimaryRegion();
+        MDC.put("region", oldPrimary);
+        MDC.put("failover_event", "true");
 
         try {
             // Find best standby (lowest replication lag)
@@ -158,6 +166,8 @@ public class RegionalFailoverManager {
             for (var counter : failureCounters.values()) {
                 counter.set(0);
             }
+            MDC.remove("region");
+            MDC.remove("failover_event");
         }
     }
 

@@ -1,0 +1,179 @@
+# AWS Route53 DNS failover configuration for multi-region SyncFlow
+# 
+# Setup: Apply these records to Route53 hosted zone for syncflow.example.com
+# This enables automatic DNS failover when the primary region's health check fails
+
+---
+# Primary region record (us-east-1)
+apiVersion: route53.aws.amazon.com/v1alpha1
+kind: Route53RecordSet
+metadata:
+  name: syncflow-us-east-1-primary
+  namespace: default
+spec:
+  # DNS name
+  name: syncflow.example.com
+  type: A
+  
+  # Alias target (points to ALB in us-east-1)
+  aliasTarget:
+    hostedZoneId: Z35SXDOTRQ7X7K  # ALB hosted zone for us-east-1
+    dnsName: syncflow-alb-us-east-1.elb.us-east-1.amazonaws.com
+    evaluateTargetHealth: true
+  
+  # Failover routing policy (primary)
+  setIdentifier: us-east-1-primary
+  failoverRoutingPolicy:
+    failoverRouting: PRIMARY
+  
+  # Health check
+  healthCheckId: hc-syncflow-us-east-1-primary
+  
+  ttl: 60
+
+---
+# Secondary region record (us-west-2)
+apiVersion: route53.aws.amazon.com/v1alpha1
+kind: Route53RecordSet
+metadata:
+  name: syncflow-us-west-2-secondary
+  namespace: default
+spec:
+  name: syncflow.example.com
+  type: A
+  
+  aliasTarget:
+    hostedZoneId: Z1H1FL5HABSF5  # ALB hosted zone for us-west-2
+    dnsName: syncflow-alb-us-west-2.elb.us-west-2.amazonaws.com
+    evaluateTargetHealth: true
+  
+  setIdentifier: us-west-2-secondary
+  failoverRoutingPolicy:
+    failoverRouting: SECONDARY
+  
+  healthCheckId: hc-syncflow-us-west-2-secondary
+  
+  ttl: 60
+
+---
+# Tertiary region record (eu-west-1)
+apiVersion: route53.aws.amazon.com/v1alpha1
+kind: Route53RecordSet
+metadata:
+  name: syncflow-eu-west-1-tertiary
+  namespace: default
+spec:
+  name: syncflow.example.com
+  type: A
+  
+  aliasTarget:
+    hostedZoneId: ZH86H537D5QEFC  # ALB hosted zone for eu-west-1
+    dnsName: syncflow-alb-eu-west-1.elb.eu-west-1.amazonaws.com
+    evaluateTargetHealth: true
+  
+  setIdentifier: eu-west-1-tertiary
+  failoverRoutingPolicy:
+    failoverRouting: SECONDARY
+  
+  healthCheckId: hc-syncflow-eu-west-1-tertiary
+  
+  ttl: 60
+
+---
+# Health check for us-east-1 (primary)
+apiVersion: route53.aws.amazon.com/v1alpha1
+kind: Route53HealthCheck
+metadata:
+  name: syncflow-health-us-east-1
+  namespace: default
+spec:
+  healthCheckId: hc-syncflow-us-east-1-primary
+  
+  # HTTP health check against /actuator/health endpoint
+  type: HTTP
+  resourcePath: /actuator/health
+  
+  # Target ALB IP/domain
+  ipAddress: 10.0.1.100  # Replace with actual ALB IP or use fullyQualifiedDomainName
+  # OR use domain name
+  fullyQualifiedDomainName: syncflow-alb-us-east-1.elb.us-east-1.amazonaws.com
+  port: 80
+  
+  # Health check configuration
+  requestInterval: 30  # seconds
+  failureThreshold: 3  # 3 consecutive failures = unhealthy
+  
+  # Additional health checks (optional)
+  enableSni: true  # Use SNI for HTTPS
+  
+  # Metrics
+  measureLatency: true
+  alarmIdentifier:
+    name: syncflow-health-alarm-us-east-1
+    region: us-east-1
+
+---
+# Health check for us-west-2 (secondary)
+apiVersion: route53.aws.amazon.com/v1alpha1
+kind: Route53HealthCheck
+metadata:
+  name: syncflow-health-us-west-2
+  namespace: default
+spec:
+  healthCheckId: hc-syncflow-us-west-2-secondary
+  type: HTTP
+  resourcePath: /actuator/health
+  fullyQualifiedDomainName: syncflow-alb-us-west-2.elb.us-west-2.amazonaws.com
+  port: 80
+  requestInterval: 30
+  failureThreshold: 3
+  measureLatency: true
+
+---
+# Health check for eu-west-1 (tertiary)
+apiVersion: route53.aws.amazon.com/v1alpha1
+kind: Route53HealthCheck
+metadata:
+  name: syncflow-health-eu-west-1
+  namespace: default
+spec:
+  healthCheckId: hc-syncflow-eu-west-1-tertiary
+  type: HTTP
+  resourcePath: /actuator/health
+  fullyQualifiedDomainName: syncflow-alb-eu-west-1.elb.eu-west-1.amazonaws.com
+  port: 80
+  requestInterval: 30
+  failureThreshold: 3
+  measureLatency: true
+
+---
+# CloudWatch alarm for primary region health
+apiVersion: cloudwatch.aws.amazon.com/v1alpha1
+kind: MetricAlarm
+metadata:
+  name: syncflow-health-alarm-us-east-1
+  namespace: default
+  region: us-east-1
+spec:
+  alarmName: syncflow-primary-health-check
+  
+  # Trigger when health check fails
+  metricName: HealthCheckStatus
+  namespace: AWS/Route53
+  statistic: Minimum
+  period: 60
+  evaluationPeriods: 1
+  threshold: 1
+  comparisonOperator: LessThanThreshold
+  
+  # Dimensions
+  dimensions:
+    - name: HealthCheckId
+      value: hc-syncflow-us-east-1-primary
+  
+  # Actions
+  alarmActions:
+    - arn:aws:sns:us-east-1:ACCOUNT_ID:syncflow-failover-alerts
+  
+  # Trigger failover webhook
+  treatMissingData: breaching
