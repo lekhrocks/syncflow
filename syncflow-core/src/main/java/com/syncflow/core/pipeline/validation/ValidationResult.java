@@ -2,13 +2,12 @@ package com.syncflow.core.pipeline.validation;
 
 import java.util.List;
 
-import com.syncflow.common.validation.ValidationResult;
-
 /**
  * Pipeline-design validation result.
  *
  * <p>
- * Unified with {@link com.syncflow.common.validation.ValidationResult} in
+ * Unified with
+ * {@link com.syncflow.common.validation.ValidationResult} in
  * {@code syncflow-common}. This class now delegates to the common type; the
  * {@link ValidationIssue} type is preserved so existing
  * {@link PipelineValidator}
@@ -38,15 +37,17 @@ public record ValidationResult(
      * {@link com.syncflow.common.validation.ValidationResult.Issue} preserving
      * code, field, message, and severity.
      */
-    public ValidationResult toCommon() {
-        var commonIssues = issues.stream()
-                .map(i -> new ValidationResult.Issue(
-                        i.code(),
-                        i.message(),
-                        ValidationResult.Severity
-                                .valueOf(i.severity().name()),
-                        i.field()))
-                .toList();
-        return new ValidationResult(valid, commonIssues);
+    public com.syncflow.common.validation.ValidationResult toCommon() {
+        var builder = com.syncflow.common.validation.ValidationResult.Builder.ok();
+        for (var issue : issues) {
+            if (issue.severity() == ValidationIssue.Severity.ERROR) {
+                builder.error(issue.code(), issue.message(), issue.field());
+            } else if (issue.severity() == ValidationIssue.Severity.WARNING) {
+                builder.warning(issue.code(), issue.message(), issue.field());
+            } else {
+                builder.info(issue.code(), issue.message(), issue.field());
+            }
+        }
+        return builder.build();
     }
 }

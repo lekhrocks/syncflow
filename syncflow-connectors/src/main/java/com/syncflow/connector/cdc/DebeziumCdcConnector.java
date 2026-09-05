@@ -193,7 +193,7 @@ public abstract class DebeziumCdcConnector implements CdcCapableConnector {
         debeziumProps.setProperty("offset.storage.jdbc.password", config.password());
         debeziumProps.setProperty("offset.storage.jdbc.table.name", "debezium_offsets");
         // V16 offset-store partitioning: tenant_id for partition routing.
-        var tenantId = (String) context.properties().getOrDefault("tenantId",
+        var tenantId = context.runtimeProperties().getOrDefault("tenantId",
                 "00000000-0000-0000-0000-000000000000");
         debeziumProps.setProperty("offset.storage.jdbc.tenant_id", tenantId);
         debeziumProps.setProperty("offset.flush.interval.ms", "5000");
