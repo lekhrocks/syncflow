@@ -108,12 +108,13 @@ public class DelegatingConnectorRegistry implements ConnectorRegistry {
 
     /**
      * Unregister a single plugin by id — used by PluginManager on
-     * disable/uninstall.
+     * disable/uninstall. Disconnects the adapter first to release
+     * resources (DB handles, CDC threads) before removing from the map.
      */
     public boolean unregisterPlugin(String pluginId) {
-        var removed = plugins.unregister(pluginId);
-        plugins.get(pluginId).ifPresent(Connector::disconnect);
-        return removed;
+        var connector = plugins.get(pluginId);
+        connector.ifPresent(Connector::disconnect);
+        return plugins.unregister(pluginId);
     }
 
     private static String pluginIdOf(Connector c) {

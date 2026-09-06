@@ -123,16 +123,18 @@ public final class PluginConnectorAdapter
 
     @Override
     public ConnectorValidationResult validate(ConnectorContext context) {
-        // Plugin SPI has no dedicated validation. Try a connect/disconnect
-        // round-trip and report the outcome.
+        // Test connectivity by calling the plugin's health check.
         try {
-            if (!connected) {
-                connect(context);
+            connect(context);
+            var health = delegate.health();
+            if (health != null && health.trim().equalsIgnoreCase("DOWN")) {
+                return ConnectorValidationResult.failed(
+                        List.of("Plugin reports DOWN"));
             }
             return ConnectorValidationResult.ok();
         } catch (Exception e) {
-            return ConnectorValidationResult.failed(List.of(
-                    "Plugin validation failed: " + e.getMessage()));
+            return ConnectorValidationResult.failed(
+                    List.of("Plugin validation failed: " + e.getMessage()));
         }
     }
 
@@ -234,8 +236,8 @@ public final class PluginConnectorAdapter
         String encoded;
         if (next == null) {
             encoded = null;
-        } else if (next.startsWith(PluginCursorCodec.encode(0).substring(0, 1))) {
-            // Already encoded by us (or a plugin using the same scheme).
+        } else if (next.startsWith("b:")) {
+            // Already encoded by us (strict prefix match).
             encoded = next;
         } else {
             // Treat the plugin's string cursor as opaque — bump the batch.
@@ -270,10 +272,12 @@ public final class PluginConnectorAdapter
         if (cdcActive) {
             return;
         }
+        // Set the flag BEFORE startCapture so that a concurrent stopCDC()
+        // sees cdcActive=true and calls stopCapture() instead of skipping it.
+        cdcActive = true;
         var pluginCtx = PluginContextAdapter.from(context);
         cp.startCapture(pluginCtx,
                 e -> eventConsumer.accept(PluginCdcEventAdapter.toCore(e, descriptor)));
-        cdcActive = true;
     }
 
     @Override
@@ -289,10 +293,11 @@ public final class PluginConnectorAdapter
 
     @Override
     public void pauseCDC() {
-        // Plugin SPI has no pause; track state for isCdcActive() reporting.
-        if (cdcActive) {
-            cdcActive = false;
-        }
+        // Plugin SPI has no pause; track state for isCdcActive() and
+        // captureStatus() so they agree. The plugin continues capturing
+        // but events are not forwarded — the consumer is stopped by
+        // the caller before calling pauseCDC().
+        cdcActive = false;
     }
 
     @Override
@@ -302,6 +307,12 @@ public final class PluginConnectorAdapter
 
     @Override
     public boolean isCdcActive() {
+        // Check the adapter flag first — it tracks pause/stop state.
+        // Fall back to the plugin's own state for the initial case
+        // where startCDC was called before this adapter was created.
+        if (!cdcActive) {
+            return false;
+        }
         if (delegate instanceof CdcProvider cp) {
             return cp.isCapturing();
         }
