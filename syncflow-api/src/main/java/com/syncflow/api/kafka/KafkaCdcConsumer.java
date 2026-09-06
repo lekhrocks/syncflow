@@ -5,6 +5,7 @@ import com.syncflow.api.config.MetricsHelper;
 import com.syncflow.api.sync.SyncOrchestrator;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.tenant.TenantContext;
+import com.syncflow.tenant.TenantContextHolder;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -116,6 +117,12 @@ public class KafkaCdcConsumer {
             KafkaConsumer<String, String> consumer,
             AtomicBoolean running,
             TenantContext tenantContext) {
+        // TenantContext is threaded explicitly; fail if a future change
+        // reintroduces ThreadLocal usage in this virtual-thread worker.
+        if (TenantContextHolder.get() != null) {
+            throw new IllegalStateException(
+                    "KafkaCdcConsumer worker thread must not carry a TenantContext ThreadLocal");
+        }
         MDC.put("pipeline_id", pipelineId);
         MDC.put("tenant_id", tenantContext.tenantId().value());
         try {

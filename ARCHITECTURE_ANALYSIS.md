@@ -377,20 +377,21 @@ public class MultiTableSyncOrchestrator {
         }
     }
 
-    private void runTableWorker(TenantContext ctx, String pipelineId, 
+    private void runTableWorker(TenantContext ctx, String pipelineId,
                                 TableMapping tm, BlockingQueue<CDCEvent> queue) {
-        TenantContextHolder.set(ctx); // If still needed, else pass explicitly
+        // TenantContext is passed explicitly — never set the ThreadLocal
+        // on virtual-thread workers. Matches SyncOrchestrator pattern.
         try {
             var writer = batchedRouter.forTable(tm.destinationTable());
             while (running) {
                 var batch = drainBatch(queue, 100);
                 if (batch.isEmpty()) continue;
-                
+
                 var rows = batch.stream()
                     .map(this::transform)
                     .filter(Objects::nonNull)
                     .toList();
-                
+
                 if (!rows.isEmpty()) {
                     writer.writeBatch(tm.destinationTable(), rows, tm.columnMappings());
                 }
@@ -483,7 +484,7 @@ public class RuntimeProperties {
 
 | Area | Current | Target | Effort |
 |------|---------|--------|--------|
-| **Tenant isolation** | ThreadLocal (broken) | Explicit context passing | Medium |
+| **Tenant isolation** | ThreadLocal (mitigated) — explicit passing + worker assertions | Full ThreadLocal removal | Low |
 | **Multi-table support** | First table only | Full pipeline parallelism | Medium |
 | **DELETE propagation** | Not implemented | Full CRUD sync | Low |
 | **Connection management** | Per-event new connection | Pooled, batched | Medium |

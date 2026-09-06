@@ -17,7 +17,16 @@ public final class TenantSupport {
     private TenantSupport() {
     }
 
-    /** Current request tenant id, or the single-tenant default when unset. */
+    /**
+     * Current request tenant id, or the single-tenant default when unset.
+     *
+     * @deprecated Prefer passing {@link TenantContext} explicitly through method
+     *             parameters. This method reads from a ThreadLocal, which is
+     *             unavailable on virtual-thread worker paths and returns a silent
+     *             default instead of failing. Existing callers in controllers are
+     *             acceptable (request thread); worker-thread callers are bugs.
+     */
+    @Deprecated
     public static String tenantId() {
         return TenantContextHolder.getTenantId().value();
     }

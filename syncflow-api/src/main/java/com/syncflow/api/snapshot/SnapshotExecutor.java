@@ -191,13 +191,17 @@ public class SnapshotExecutor {
     }
 
     private void execute(TenantContext tenantContext, SnapshotJob job, PipelineDesign pipeline) {
-        // DEEP FIX: TenantContext is threaded explicitly through every call;
-        // we do not set the ThreadLocal. See SyncOrchestrator.run() for the
-        // same pattern.
+        // TenantContext is threaded explicitly through every call; we never
+        // set the ThreadLocal. Fail loudly if a future change reintroduces
+        // ThreadLocal usage in this worker.
+        if (TenantContextHolder.get() != null) {
+            throw new IllegalStateException(
+                    "Snapshot worker thread must not carry a TenantContext ThreadLocal");
+        }
         try {
             executeInner(job, pipeline, tenantContext);
         } finally {
-            // Defensive cleanup of any stale ThreadLocal.
+            // Defensive cleanup — matches SyncOrchestrator.run() pattern.
             TenantContextHolder.clear();
         }
     }
