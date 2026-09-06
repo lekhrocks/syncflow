@@ -43,6 +43,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.StructuredTaskScope.Joiner;
 
 @Component
 public class SnapshotExecutor {
@@ -165,10 +168,13 @@ public class SnapshotExecutor {
         // two terminal states cannot race: a cancel that lands mid-terminal wins
         // BEFORE the worker commits, instead of overriding the status after the
         // commit. The worker re-checks isCancelled() inside the same lock.
-        synchronized (progressLock) {
+        progressLock.lock();
+        try {
             if (flag != null)
                 flag.set(true);
             persist(cancelled, tenantContext);
+        } finally {
+            progressLock.unlock();
         }
         // Do NOT release the in-memory cancel flag here. The worker must still
         // observe it at its terminal check to keep the CANCELLED status from
@@ -205,9 +211,8 @@ public class SnapshotExecutor {
         var rowsProcessed = new AtomicLong(0);
         var batchesDone = new AtomicLong(0);
         // DestinationWriter is single-connection and not thread-safe; writes
-        // across parallel chunk workers serialize on this monitor.
-        var writerLock = new Object();
-        AtomicReference<Throwable> failure = new AtomicReference<>();
+        // across parallel chunk workers serialize on this lock.
+        var writerLock = new ReentrantLock();
 
         DestinationWriter writer = null;
         try {
@@ -247,40 +252,27 @@ public class SnapshotExecutor {
                 }
             }
 
-            var poolSize = Math.max(1, Math.min(parallelism, workItems.size()));
-            // Each worker thread owns ONE exclusive connector clone for its whole
-            // lifetime and drains a shared work queue, so no two in-flight tasks
-            // ever share a JDBC Connection (which is not thread-safe). A 64-chunk
-            // table with 4 workers still opens only 4 DB connections.
-            var workQueue = new java.util.concurrent.LinkedBlockingQueue<WorkItem>(workItems);
+            // StructuredTaskScope with Joiner.allSuccessfulOrThrow: fork one task
+            // per work item, shut down on first failure, propagate that failure.
+            // Each task gets its own connector clone (JDBC connections are not
+            // thread-safe).
             var workerClones = new ArrayList<SnapshotCapableConnector>();
-            try {
-                for (int i = 0; i < poolSize; i++) {
-                    workerClones.add(connector.snapshotClone(sourceCtx));
+            try (var scope = StructuredTaskScope.open(Joiner.allSuccessfulOrThrow())) {
+                for (var wi : workItems) {
+                    var clone = connector.snapshotClone(sourceCtx);
+                    workerClones.add(clone);
+                    scope.fork(() -> {
+                        snapshotRange(job, pipeline, tenantContext, clone,
+                                sharedWriter, writerLock, wi.table(), wi.range(), sourceCtx,
+                                rowsProcessed, batchesDone, finalTotalRows, finalTotalBatches);
+                        return true;
+                    });
                 }
-                var workers = new ArrayList<Thread>(poolSize);
-                for (var workerConnector : workerClones) {
-                    workers.add(Thread.startVirtualThread(() -> {
-                        while (true) {
-                            var wi = workQueue.poll();
-                            if (wi == null) {
-                                break; // the queue is drained
-                            }
-                            try {
-                                snapshotRange(job, pipeline, tenantContext, workerConnector,
-                                        sharedWriter, writerLock, wi.table(), wi.range(), sourceCtx,
-                                        rowsProcessed, batchesDone, finalTotalRows, finalTotalBatches);
-                            } catch (Throwable t) {
-                                failure.compareAndSet(null, t);
-                            }
-                        }
-                    }));
-                }
-                for (var worker : workers) {
-                    worker.join();
-                }
+                scope.join();
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
+            } catch (Throwable t) {
+                throw new RuntimeException("Snapshot range failed", t);
             } finally {
                 for (var clone : workerClones) {
                     try {
@@ -290,16 +282,13 @@ public class SnapshotExecutor {
                 }
             }
 
-            if (failure.get() != null) {
-                throw new RuntimeException("Snapshot range failed", failure.get());
-            }
-
             var elapsed = sample.stop(timer);
             // Decide the terminal state under progressLock so it cannot race the
             // cancel() path. The in-memory flag is re-checked inside the lock:
             // if cancel() ran between the loop's check and here, the snapshot is
             // CANCELLED and must not be overridden by COMPLETED.
-            synchronized (progressLock) {
+            progressLock.lock();
+            try {
                 if (isCancelled(job)) {
                     // Do not commit partial writes on cancel — a later resume would
                     // duplicate the already-written rows.
@@ -318,6 +307,8 @@ public class SnapshotExecutor {
                 // Release worker state once the worker has decided its terminal
                 // state (COMPLETED or CANCELLED stood).
                 remove(job.getId().value());
+            } finally {
+                progressLock.unlock();
             }
         } catch (Exception e) {
             sample.stop(timer);
@@ -332,13 +323,16 @@ public class SnapshotExecutor {
             // A cancellation outranks a failure — the user asked to stop, so the
             // CANCELLED status (already persisted by cancel()) must not be
             // overwritten by FAILED. Same lock discipline as the completion path.
-            synchronized (progressLock) {
+            progressLock.lock();
+            try {
                 if (!isCancelled(job)) {
                     var failed = job.withFailed(List.of(error));
                     persist(failed, tenantContext);
                     emit(job.getId().value(), failed, tenantContext);
                 }
                 remove(job.getId().value());
+            } finally {
+                progressLock.unlock();
             }
             MetricsHelper.increment(meterRegistry, "syncflow.snapshot.errors",
                     "pipeline", pipeline.id().value());
@@ -350,7 +344,7 @@ public class SnapshotExecutor {
      * {@link SnapshotWorker} for the actual read/transform/write loop.
      */
     private void snapshotRange(SnapshotJob job, PipelineDesign pipeline, TenantContext tenantContext,
-            SnapshotCapableConnector connector, DestinationWriter writer, Object writerLock,
+            SnapshotCapableConnector connector, DestinationWriter writer, ReentrantLock writerLock,
             TableMapping tm, ChunkRange range, ConnectorContext sourceCtx,
             AtomicLong rowsProcessed, AtomicLong batchesDone, long totalRows, long totalBatches) {
         SnapshotWorker.snapshotRange(job, pipeline, tenantContext,
@@ -365,11 +359,12 @@ public class SnapshotExecutor {
 
     /**
      * Aggregate live-progress publication across parallel chunk workers is
-     * serialized on this monitor; {@link #persist} reads the whole job payload
+     * serialized on this lock; {@link #persist} reads the whole job payload
      * and writes it back, so two workers persisting concurrently would clobber
-     * each other's progress.
+     * each other's progress. Uses ReentrantLock instead of synchronized to
+     * avoid pinning virtual threads on carrier threads.
      */
-    private final Object progressLock = new Object();
+    private final ReentrantLock progressLock = new ReentrantLock();
 
     /** A (table mapping, chunk range) work item for the parallel snapshot. */
     private record WorkItem(TableMapping table, ChunkRange range) {
