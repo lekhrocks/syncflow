@@ -80,7 +80,7 @@ hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version = "1.12.2" }
 mockito-core = { module = "org.mockito:mockito-core", version = "5.17.0" }
 mockito-junit-jupiter = { module = "org.mockito:mockito-junit-jupiter", version = "5.17.0" }
-archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version = "1.4.0" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version = "1.5.0" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
