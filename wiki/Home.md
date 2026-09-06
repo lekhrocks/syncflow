@@ -39,3 +39,4 @@ SyncFlow is a production-grade, connector-based CDC platform for synchronizing d
 - [[Database-Schema]] — Flyway migrations and table reference
 - [[Architecture-Decisions]] — ADR index
 - [[Roadmap]] — Feature status and upcoming work
+
