@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,6 +36,7 @@ public class RegionalDataSourceFactory {
     private final RegionalProperties regionalProperties;
     private final Map<String, HikariDataSource> datasources = new ConcurrentHashMap<>();
     private volatile String currentPrimaryRegion;
+    private final ReentrantLock failoverLock = new ReentrantLock();
 
     public RegionalDataSourceFactory(RegionalProperties regionalProperties) {
         this.regionalProperties = regionalProperties;
@@ -112,16 +114,21 @@ public class RegionalDataSourceFactory {
      * @param newPrimaryRegion
      *            region to promote (e.g., "eu-west-1")
      */
-    public synchronized void promoteReplicaToPrimary(String newPrimaryRegion) {
-        if (!datasources.containsKey(newPrimaryRegion)) {
-            throw new IllegalArgumentException("Region not configured: " + newPrimaryRegion);
-        }
+    public void promoteReplicaToPrimary(String newPrimaryRegion) {
+        failoverLock.lock();
+        try {
+            if (!datasources.containsKey(newPrimaryRegion)) {
+                throw new IllegalArgumentException("Region not configured: " + newPrimaryRegion);
+            }
 
-        logger.info(
-                "Promoting region {} to primary (was: {})",
-                newPrimaryRegion,
-                currentPrimaryRegion);
-        currentPrimaryRegion = newPrimaryRegion;
+            logger.info(
+                    "Promoting region {} to primary (was: {})",
+                    newPrimaryRegion,
+                    currentPrimaryRegion);
+            currentPrimaryRegion = newPrimaryRegion;
+        } finally {
+            failoverLock.unlock();
+        }
     }
 
     /**
@@ -134,26 +141,31 @@ public class RegionalDataSourceFactory {
      * @param connectionString
      *            new connection string
      */
-    public synchronized void updateRegionalDataSource(String region, String connectionString) {
-        // Close old datasource
-        var old = datasources.get(region);
-        if (old != null && !old.isClosed()) {
-            try {
-                old.close();
-                logger.info("Closed datasource for region: {}", region);
-            } catch (Exception e) {
-                logger.warn("Error closing datasource for region: {}", region, e);
-            }
-        }
-
-        // Create new datasource
+    public void updateRegionalDataSource(String region, String connectionString) {
+        failoverLock.lock();
         try {
-            var newDs = createDataSource(region, connectionString);
-            datasources.put(region, newDs);
-            logger.info("Updated datasource for region: {} with new connection", region);
-        } catch (Exception e) {
-            logger.error("Failed to update datasource for region: {}", region, e);
-            throw new RuntimeException("Cannot update datasource for " + region, e);
+            // Close old datasource
+            var old = datasources.get(region);
+            if (old != null && !old.isClosed()) {
+                try {
+                    old.close();
+                    logger.info("Closed datasource for region: {}", region);
+                } catch (Exception e) {
+                    logger.warn("Error closing datasource for region: {}", region, e);
+                }
+            }
+
+            // Create new datasource
+            try {
+                var newDs = createDataSource(region, connectionString);
+                datasources.put(region, newDs);
+                logger.info("Updated datasource for region: {} with new connection", region);
+            } catch (Exception e) {
+                logger.error("Failed to update datasource for region: {}", region, e);
+                throw new RuntimeException("Cannot update datasource for " + region, e);
+            }
+        } finally {
+            failoverLock.unlock();
         }
     }
 

@@ -1,7 +1,7 @@
 # SyncFlow Architecture Analysis
 
 **Generated:** 2026-08-12  
-**Last updated:** 2026-09-05 (M1/M2/M6/M7/M8 maintainability, D6 metrics dedup — see item statuses below)  
+**Last updated:** 2026-09-06 (F16 structured concurrency — see item statuses below)  
 **Scope:** End-to-end codebase review (core, api, connectors, common, agent)
 
 ---
@@ -237,7 +237,7 @@
 
 | # | Action |
 |---|--------|
-| **F16** | Migrate to reactive (Project Reactor) or structured concurrency for better resource control |
+| **F16** | Migrate to reactive (Project Reactor) or structured concurrency for better resource control | ✅ **Done** — `StructuredTaskScope` for snapshot fan-out, `ReentrantLock` replaces all `synchronized`, `spring.threads.virtual.enabled: true`. Reactive path (WebFlux/Reactor) deferred: virtual threads + structured concurrency deliver equivalent resource control without the servlet→reactive ecosystem migration. Revisit if backpressure becomes a requirement. |
 | **F17** | Add multi-region / geo-replication support |
 | **F18** | Implement connector plugin system (dynamic loading) |
 | **F19** | Add SQL-based transformation engine (push down to DB) |
@@ -505,7 +505,7 @@ public class RuntimeProperties {
 3. ~~**Week 5-6**: F4, F7 (persistence + resilience)~~ ✅ done (runtime state durable, backpressure via DLQ)
 4. ~~**Week 7-8**: F11, F12 (architecture extraction)~~ ✅ persistence extracted; `syncflow-runtime` still deferred (see ADR)
 5. ~~**Week 9-10**: F13, F14 (distributed + exactly-once)~~ ✅ done (Postgres advisory locks, mark-after-write idempotency)
-6. **Ongoing**: F15 ✅ done (parallel PK-range chunking); F16+ (reactive, geo-replication, plugin system, SQL-transform pushdown) still open
+6. **Ongoing**: F15 ✅ done (parallel PK-range chunking); F16 ✅ done (structured concurrency: `StructuredTaskScope`, `ReentrantLock`, virtual threads); F17+ (geo-replication, plugin system, SQL-transform pushdown) still open
 
 ---
 

@@ -21,6 +21,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -44,11 +45,11 @@ final class SnapshotWorker {
      * batch-write to the destination. Writes serialize on {@code writerLock}.
      */
     static void snapshotRange(SnapshotJob job, PipelineDesign pipeline, TenantContext tenantContext,
-            SnapshotCapableConnector connector, DestinationWriter writer, Object writerLock,
+            SnapshotCapableConnector connector, DestinationWriter writer, ReentrantLock writerLock,
             TableMapping tm, ChunkRange range, ConnectorContext sourceCtx,
             AtomicLong rowsProcessed, AtomicLong batchesDone, long totalRows, long totalBatches,
             CheckpointStore checkpointStore, RuntimeProperties runtime,
-            Object progressLock, BooleanSupplier isCancelled,
+            ReentrantLock progressLock, BooleanSupplier isCancelled,
             java.util.function.BiConsumer<SnapshotJob, TenantContext> persist,
             TriConsumer<String, SnapshotJob, TenantContext> emit,
             MeterRegistry meterRegistry) {
@@ -90,12 +91,15 @@ final class SnapshotWorker {
                     .toList();
 
             if (!batch.isEmpty()) {
-                synchronized (writerLock) {
+                writerLock.lock();
+                try {
                     if (useUpsert) {
                         writer.upsertBatch(destTable, destCols, batch, keyCols);
                     } else {
                         writer.writeBatch(destTable, destCols, batch);
                     }
+                } finally {
+                    writerLock.unlock();
                 }
             }
 
@@ -111,7 +115,8 @@ final class SnapshotWorker {
                         (int) chunkBatch, rowsProcessed.get(), page.nextCursor()));
             }
 
-            synchronized (progressLock) {
+            progressLock.lock();
+            try {
                 if (!isCancelled.getAsBoolean()
                         && chunkBatch % runtime.getSnapshot().getProgressPublishIntervalBatches() == 0) {
                     var pct = totalRows > 0 ? (double) rowsProcessed.get() / totalRows * 100 : 0;
@@ -121,6 +126,8 @@ final class SnapshotWorker {
                     persist.accept(updated, tenantContext);
                     emit.accept(job.getId().value(), updated, tenantContext);
                 }
+            } finally {
+                progressLock.unlock();
             }
 
             var nextBatchInfo = new BatchInformation(
