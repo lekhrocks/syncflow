@@ -1,5 +1,7 @@
 package com.syncflow.api.plugin;
 
+import com.syncflow.api.plugin.adapter.PluginConnectorAdapter;
+import com.syncflow.api.plugin.registry.DelegatingConnectorRegistry;
 import com.syncflow.plugin.descriptor.PluginDescriptor;
 import com.syncflow.plugin.lifecycle.PluginLifecycle;
 import com.syncflow.plugin.spi.PluginConnector;
@@ -19,6 +21,19 @@ public class PluginManager {
 
     private final Map<String, PluginEntry> plugins = new ConcurrentHashMap<>();
     private final Map<String, URLClassLoader> classLoaders = new ConcurrentHashMap<>();
+    private final Map<String, PluginConnectorAdapter> adapters = new ConcurrentHashMap<>();
+    private final DelegatingConnectorRegistry registry;
+
+    public PluginManager(DelegatingConnectorRegistry registry) {
+        this.registry = registry;
+    }
+
+    /**
+     * Test-only constructor — registry operations are no-ops when registry is null.
+     */
+    PluginManager() {
+        this.registry = null;
+    }
 
     public PluginInstallResult install(File jarFile) {
         try (var jar = new JarFile(jarFile)) {
@@ -64,6 +79,15 @@ public class PluginManager {
         var entry = plugins.get(pluginId);
         if (entry == null)
             return false;
+        // Already enabled? Idempotent.
+        if (entry.lifecycle() == PluginLifecycle.ENABLED) {
+            return true;
+        }
+        var adapter = adapters.computeIfAbsent(pluginId,
+                id -> new PluginConnectorAdapter(entry.connector(), entry.descriptor()));
+        if (registry != null) {
+            registry.register(adapter);
+        }
         plugins.put(pluginId, new PluginEntry(entry.descriptor(), entry.connector(), PluginLifecycle.ENABLED));
         return true;
     }
@@ -72,12 +96,19 @@ public class PluginManager {
         var entry = plugins.get(pluginId);
         if (entry == null)
             return false;
+        if (registry != null) {
+            registry.unregisterPlugin(pluginId);
+        }
         plugins.put(pluginId, new PluginEntry(entry.descriptor(), entry.connector(), PluginLifecycle.DISABLED));
         return true;
     }
 
     public boolean uninstall(String pluginId) {
         var removed = plugins.remove(pluginId);
+        if (registry != null) {
+            registry.unregisterPlugin(pluginId);
+        }
+        adapters.remove(pluginId);
         var cl = classLoaders.remove(pluginId);
         if (cl != null) {
             try {
