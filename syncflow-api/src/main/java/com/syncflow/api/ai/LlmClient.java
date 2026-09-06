@@ -18,12 +18,12 @@ public class LlmClient {
     private final HttpClient http;
     private final ObjectMapper mapper;
 
-    public LlmClient(AiProperties props) {
+    public LlmClient(AiProperties props, ObjectMapper objectMapper) {
         this.props = props;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
-        this.mapper = new ObjectMapper();
+        this.mapper = objectMapper;
     }
 
     public String call(String prompt, String sessionId) {

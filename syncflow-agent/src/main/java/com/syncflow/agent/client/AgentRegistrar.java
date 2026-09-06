@@ -1,5 +1,6 @@
 package com.syncflow.agent.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncflow.agent.domain.AgentId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,13 +21,16 @@ public class AgentRegistrar {
     private static final Logger log = LoggerFactory.getLogger(AgentRegistrar.class);
 
     private final HttpClient http;
+    private final ObjectMapper mapper;
     private final String controlPlaneUrl;
     private final String version;
     private AgentId agentId;
 
     public AgentRegistrar(
+            ObjectMapper objectMapper,
             @Value("${syncflow.agent.control-plane:http://localhost:8080}") String cpUrl,
             @Value("${syncflow.agent.version:0.1.0}") String version) {
+        this.mapper = objectMapper;
         this.controlPlaneUrl = cpUrl;
         this.version = version;
         this.http = HttpClient.newBuilder()
@@ -36,14 +40,13 @@ public class AgentRegistrar {
 
     public void register() {
         try {
-            var body = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .writeValueAsString(Map.of(
-                            "version", version,
-                            "capabilities", List.of("SNAPSHOT", "CDC", "SYNCHRONIZATION", "METADATA"),
-                            "labels", Map.of("type", "standard"),
-                            "environment", "customer",
-                            "region", System.getenv().getOrDefault("REGION", "unknown"),
-                            "hostname", java.net.InetAddress.getLocalHost().getHostName()));
+            var body = mapper.writeValueAsString(Map.of(
+                    "version", version,
+                    "capabilities", List.of("SNAPSHOT", "CDC", "SYNCHRONIZATION", "METADATA"),
+                    "labels", Map.of("type", "standard"),
+                    "environment", "customer",
+                    "region", System.getenv().getOrDefault("REGION", "unknown"),
+                    "hostname", java.net.InetAddress.getLocalHost().getHostName()));
 
             var req = HttpRequest.newBuilder()
                     .uri(URI.create(controlPlaneUrl + "/api/agents/register"))
@@ -54,7 +57,7 @@ public class AgentRegistrar {
 
             var resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() == 200) {
-                var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(resp.body());
+                var json = mapper.readTree(resp.body());
                 this.agentId = new AgentId(json.get("id").get("value").asText());
                 log.info("Agent registered: {}", agentId);
             } else {

@@ -1,5 +1,6 @@
 package com.syncflow.agent.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncflow.agent.domain.HardwareMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,13 +22,16 @@ public class HeartbeatSender {
     private static final Logger log = LoggerFactory.getLogger(HeartbeatSender.class);
 
     private final HttpClient http;
+    private final ObjectMapper mapper;
     private final String controlPlaneUrl;
     private final AgentRegistrar registrar;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     public HeartbeatSender(AgentRegistrar registrar,
+            ObjectMapper objectMapper,
             @org.springframework.beans.factory.annotation.Value("${syncflow.agent.control-plane:http://localhost:8080}") String cpUrl) {
         this.registrar = registrar;
+        this.mapper = objectMapper;
         this.controlPlaneUrl = cpUrl;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
@@ -48,13 +52,12 @@ public class HeartbeatSender {
                 mem.totalMemory(), 0, 0, 0, 0, 0);
 
         try {
-            var body = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .writeValueAsString(Map.of(
-                            "agentId", agentId.value(),
-                            "cpuPercent", hw.cpuPercent(),
-                            "memoryUsed", hw.memoryUsed(),
-                            "memoryTotal", hw.memoryTotal(),
-                            "runningJobs", hw.runningJobs()));
+            var body = mapper.writeValueAsString(Map.of(
+                    "agentId", agentId.value(),
+                    "cpuPercent", hw.cpuPercent(),
+                    "memoryUsed", hw.memoryUsed(),
+                    "memoryTotal", hw.memoryTotal(),
+                    "runningJobs", hw.runningJobs()));
 
             var req = HttpRequest.newBuilder()
                     .uri(URI.create(controlPlaneUrl + "/api/agents/heartbeat"))
