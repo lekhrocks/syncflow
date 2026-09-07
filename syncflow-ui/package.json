@@ -23,7 +23,7 @@
     "ag-grid-community": "^33.0.0",
     "ag-grid-react": "^33.0.0",
     "axios": "^1.7.9",
-    "dayjs": "^1.11.13",
+    "dayjs": "^1.11.23",
     "framer-motion": "^11.15.0",
     "k6": "^0.0.0",
     "react": "^19.0.0",
