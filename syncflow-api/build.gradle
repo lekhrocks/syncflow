@@ -9,7 +9,7 @@ plugins {
 // patched 2.21.5 AFTER Spring Boot's BOM so the later import wins.
 dependencyManagement {
     imports {
-        mavenBom "com.fasterxml.jackson:jackson-bom:2.21.5"
+        mavenBom "com.fasterxml.jackson:jackson-bom:2.22.2"
     }
 }
 
