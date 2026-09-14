@@ -1,7 +1,7 @@
 # SyncFlow Architecture Analysis
 
 **Generated:** 2026-08-12  
-**Last updated:** 2026-09-06 (F16 structured concurrency — see item statuses below)  
+**Last updated:** 2026-09-14 (F17/F18/F19 completed — all items done except F11 deferred)  
 **Scope:** End-to-end codebase review (core, api, connectors, common, agent)
 
 ---
@@ -238,9 +238,9 @@
 | # | Action |
 |---|--------|
 | **F16** | Migrate to reactive (Project Reactor) or structured concurrency for better resource control | ✅ **Done** — `StructuredTaskScope` for snapshot fan-out, `ReentrantLock` replaces all `synchronized`, `spring.threads.virtual.enabled: true`. Reactive path (WebFlux/Reactor) deferred: virtual threads + structured concurrency deliver equivalent resource control without the servlet→reactive ecosystem migration. Revisit if backpressure becomes a requirement. |
-| **F17** | Add multi-region / geo-replication support |
-| **F18** | Implement connector plugin system (dynamic loading) |
-| **F19** | Add SQL-based transformation engine (push down to DB) |
+| **F17** | Add multi-region / geo-replication support | ✅ **Done** — `com.syncflow.api.region` package (7 classes), Helm/Route53 failover, gated behind `syncflow.region.replication-enabled=true` |
+| **F18** | Implement connector plugin system (dynamic loading) | ✅ **Done** — `syncflow-plugin-api` module, `PluginManager` with `URLClassLoader` isolation, REST API (`/api/plugins/*`), lifecycle management |
+| **F19** | Add SQL-based transformation engine (per-row H2 projection) | ✅ **Done** — `SqlRowTransformProcessor` runs chained SQL SELECTs against an H2 in-memory single-row table (`__row__`). All columns typed as VARCHAR. Guardrail: max 10 chained queries. Connection reused across chains. |
 
 ---
 
@@ -498,15 +498,15 @@ public class RuntimeProperties {
 
 ## 7. Recommended Implementation Order
 
-> **Status (2026-08-17):** items 1–4 and item 5 are complete. F15 (parallel
-> snapshot) is also done. Remaining roadmap below.
+> **Status (2026-09-14):** items 1–5 complete. F15–F19 complete. Only F11
+> (`syncflow-runtime` module extraction) remains deferred.
 
 1. ~~**Week 1-2**: F1, F2, F3, F9, F10 (correctness + deduplication)~~ ✅ done
 2. ~~**Week 3-4**: F5, F6, F8 (performance + config)~~ ✅ done
 3. ~~**Week 5-6**: F4, F7 (persistence + resilience)~~ ✅ done (runtime state durable, backpressure via DLQ)
 4. ~~**Week 7-8**: F11, F12 (architecture extraction)~~ ✅ persistence extracted; `syncflow-runtime` still deferred (see ADR)
 5. ~~**Week 9-10**: F13, F14 (distributed + exactly-once)~~ ✅ done (Postgres advisory locks, mark-after-write idempotency)
-6. **Ongoing**: F15 ✅ done (parallel PK-range chunking); F16 ✅ done (structured concurrency: `StructuredTaskScope`, `ReentrantLock`, virtual threads); F17+ (geo-replication, plugin system, SQL-transform pushdown) still open
+6. ~~**Ongoing**: F15 ✅ done (parallel PK-range chunking); F16 ✅ done (structured concurrency); F17 ✅ done (multi-region/geo-replication); F18 ✅ done (connector plugin system); F19 ✅ done (SQL transform engine — per-row H2 projection)~~
 
 ---
 

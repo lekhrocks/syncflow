@@ -22,6 +22,7 @@ import com.syncflow.core.pipeline.mapping.ColumnMapping;
 import com.syncflow.core.pipeline.mapping.TableMapping;
 import com.syncflow.core.snapshot.pipeline.FilterProcessor;
 import com.syncflow.core.snapshot.pipeline.ProcessingContext;
+import com.syncflow.core.snapshot.pipeline.RecordProcessor;
 import com.syncflow.core.snapshot.pipeline.SqlRowTransformProcessor;
 import com.syncflow.core.snapshot.pipeline.TransformProcessor;
 import com.syncflow.core.sync.FailureReason;
@@ -313,6 +314,10 @@ public class SyncOrchestrator {
                 // Tables we have already warned about (avoid log spam per event).
                 final Set<String> warnedTables = ConcurrentHashMap.newKeySet();
 
+                // cache chains per TableMapping — avoids re-creating 3
+                // objects per event when the same mapping handles many events.
+                final Map<TableMapping, RecordProcessor> chainCache = new HashMap<>();
+
                 for (var event : eventsThisBatch) {
                     if (!flag.get())
                         break;
@@ -336,7 +341,7 @@ public class SyncOrchestrator {
                         continue;
                     }
                     var pending = processEvent(tenantContext, pipelineId, event, mapping, destConnectionId,
-                            statsBuilder, writeBuffer, deleteBuffer);
+                            statsBuilder, writeBuffer, deleteBuffer, chainCache);
                     if (pending != null) {
                         pendingIds.add(pending);
                     }
@@ -412,7 +417,8 @@ public class SyncOrchestrator {
             TableMapping mapping, String destConnectionId,
             SyncStatisticsBuilder stats,
             Map<TableMapping, List<Map<String, Object>>> writeBuffer,
-            Map<TableMapping, List<Map<String, Object>>> deleteBuffer) {
+            Map<TableMapping, List<Map<String, Object>>> deleteBuffer,
+            Map<TableMapping, RecordProcessor> chainCache) {
         // Idempotency check
         var eventId = event.header().eventId();
         if (idempotencyStore.isProcessed(eventId)) {
@@ -429,9 +435,9 @@ public class SyncOrchestrator {
                 return null;
             }
             var pCtx = new ProcessingContext(null, mapping);
-            var chain = new FilterProcessor()
-                    .andThen(new SqlRowTransformProcessor(mapping))
-                    .andThen(new TransformProcessor());
+            var chain = chainCache.computeIfAbsent(mapping, m -> new FilterProcessor()
+                    .andThen(new SqlRowTransformProcessor(m))
+                    .andThen(new TransformProcessor()));
             var filtered = chain.process(payload, pCtx);
             if (filtered == null) {
                 stats.skippedEvents.incrementAndGet();

@@ -469,4 +469,20 @@ class ProcessingPipelineTest {
                         new TableMapping("t", "t_dest", null, null,
                                 List.of(), List.of(), List.of(), null))));
     }
+
+    @Test
+    void sqlQueryMaxChainedQueriesGuardrail() {
+        // Build a list exceeding MAX_CHAINED_QUERIES
+        var queries = new java.util.ArrayList<String>();
+        for (int i = 0; i < SqlRowTransformProcessor.MAX_CHAINED_QUERIES + 1; i++) {
+            queries.add("SELECT * FROM __row__");
+        }
+        var proc = new SqlRowTransformProcessor(queries);
+
+        var record = Map.<String, Object>of("id", "1", "name", "x");
+        assertThrows(SqlRowTransformProcessor.SqlRowTransformException.class,
+                () -> proc.process(record, ctx(
+                        new TableMapping("t", "t_dest", null, null,
+                                List.of(), List.of(), List.of(), null))));
+    }
 }
