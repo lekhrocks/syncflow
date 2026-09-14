@@ -435,10 +435,9 @@ public class SyncOrchestrator {
                 return null;
             }
             var pCtx = new ProcessingContext(null, mapping);
-            var chain = chainCache.computeIfAbsent(mapping, m ->
-                    new FilterProcessor()
-                            .andThen(new SqlRowTransformProcessor(m))
-                            .andThen(new TransformProcessor()));
+            var chain = chainCache.computeIfAbsent(mapping, m -> new FilterProcessor()
+                    .andThen(new SqlRowTransformProcessor(m))
+                    .andThen(new TransformProcessor()));
             var filtered = chain.process(payload, pCtx);
             if (filtered == null) {
                 stats.skippedEvents.incrementAndGet();
