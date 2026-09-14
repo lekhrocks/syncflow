@@ -17,8 +17,8 @@ import org.slf4j.LoggerFactory;
  * <h3>How it works</h3>
  * For each incoming row the processor:
  * <ol>
- * <li>Opens a private, per-call H2 in-memory connection
- * ({@code MODE=MySQL} for familiar string functions).</li>
+ * <li>Opens a private, per-call H2 in-memory connection (vanilla H2 dialect,
+ * {@code IGNORECASE=TRUE} for case-insensitive column lookups).</li>
  * <li>Creates a single-row table named {@code __row__} whose columns match
  * the source row keys, all typed as {@code VARCHAR}.</li>
  * <li>Inserts the row values as strings.</li>
@@ -36,8 +36,8 @@ import org.slf4j.LoggerFactory;
  * parameters — never interpolated into SQL strings.</li>
  * <li>Each call gets a fresh, isolated H2 connection; there is no shared
  * state between rows or between pipelines.</li>
- * <li>The H2 URL disables the web console and file access:
- * {@code ;FORBID_CREATION=FALSE;TRACE_LEVEL_SYSTEM_OUT=0}.</li>
+ * <li>The H2 URL uses {@code DB_CLOSE_DELAY=0} so the in-memory database is
+ * discarded when the connection closes.</li>
  * </ul>
  *
  * <h3>Null handling</h3>
@@ -74,6 +74,9 @@ public class SqlRowTransformProcessor implements RecordProcessor {
     private static final java.util.regex.Pattern SAFE_IDENTIFIER = java.util.regex.Pattern
             .compile("[A-Za-z_][A-Za-z0-9_]*");
 
+    /** guardrail against misconfigured mappings that chain hundreds of queries. */
+    static final int MAX_CHAINED_QUERIES = 10;
+
     private final List<String> queries;
 
     /**
@@ -96,35 +99,35 @@ public class SqlRowTransformProcessor implements RecordProcessor {
         if (queries.isEmpty()) {
             return record;
         }
-
-        Map<String, Object> current = record;
-        for (var query : queries) {
-            current = executeQuery(current, query);
-            if (current == null) {
-                return null;
-            }
+        if (queries.size() > MAX_CHAINED_QUERIES) {
+            throw new SqlRowTransformException(
+                    "Too many chained SQL transforms: " + queries.size()
+                            + " (max " + MAX_CHAINED_QUERIES + ")");
         }
-        return current;
+
+        // single H2 connection reused across all chained queries
+        // for this row — avoids N connection create/destroy cycles.
+        var jdbcUrl = "jdbc:h2:mem:;IGNORECASE=TRUE;DB_CLOSE_DELAY=0";
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "sa", "")) {
+            conn.setAutoCommit(true);
+            Map<String, Object> current = record;
+            for (var query : queries) {
+                createAndPopulateTable(conn, current);
+                current = runProjection(conn, query);
+                if (current == null) {
+                    return null;
+                }
+            }
+            return current;
+        } catch (SQLException e) {
+            throw new SqlRowTransformException(
+                    "SQL row transform failed: " + e.getMessage(), e);
+        }
     }
 
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
-
-    private Map<String, Object> executeQuery(Map<String, Object> row, String query) {
-        // H2 in-memory DB, isolated per call — no shared state.
-        // IGNORECASE=TRUE makes column lookups case-insensitive for convenience.
-        var jdbcUrl = "jdbc:h2:mem:;IGNORECASE=TRUE;DB_CLOSE_DELAY=0";
-
-        try (Connection conn = DriverManager.getConnection(jdbcUrl, "sa", "")) {
-            conn.setAutoCommit(true);
-            createAndPopulateTable(conn, row);
-            return runProjection(conn, query);
-        } catch (SQLException e) {
-            throw new SqlRowTransformException(
-                    "SQL row transform failed for query [" + query + "]: " + e.getMessage(), e);
-        }
-    }
 
     /** Creates {@code __row__} with VARCHAR columns and inserts the single row. */
     private void createAndPopulateTable(Connection conn, Map<String, Object> row) throws SQLException {
@@ -135,6 +138,11 @@ public class SqlRowTransformProcessor implements RecordProcessor {
         var cols = row.keySet().stream()
                 .map(SqlRowTransformProcessor::sanitize)
                 .toList();
+
+        // DROP first so chained queries don't hit "table already exists"
+        try (var stmt = conn.createStatement()) {
+            stmt.execute("DROP TABLE IF EXISTS " + VIRTUAL_TABLE);
+        }
 
         // CREATE TABLE __row__ (col1 VARCHAR, col2 VARCHAR, ...)
         var ddl = new StringBuilder("CREATE TABLE ")

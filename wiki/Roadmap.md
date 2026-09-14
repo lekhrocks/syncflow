@@ -39,6 +39,9 @@ Feature status as of 2026-09-06. Tracked in `ARCHITECTURE_ANALYSIS.md`.
 | ID | Feature | Status |
 |----|---------|--------|
 | F16 | Migrate to reactive or structured concurrency | ✅ Done |
+| F17 | Multi-region / geo-replication support | ✅ Done |
+| F18 | Implement connector plugin system (dynamic loading) | ✅ Done |
+| F19 | Add SQL-based transformation engine (per-row H2 projection) | ✅ Done |
 
 ---
 
@@ -54,11 +57,7 @@ Feature status as of 2026-09-06. Tracked in `ARCHITECTURE_ANALYSIS.md`.
 
 ### P3 — Platform
 
-| ID | Feature | Priority |
-|----|---------|----------|
-| F17 | Multi-region / geo-replication support | High |
-| F18 | Implement connector plugin system (dynamic loading) | Medium |
-| F19 | Add SQL-based transformation engine (push down to DB) | Medium |
+_No upcoming items._
 
 ### Deferred
 
