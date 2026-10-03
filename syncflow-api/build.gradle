@@ -4,14 +4,8 @@ plugins {
     alias(libs.plugins.spring.dependency.management)
 }
 
-// GHSA-mhm7-754m-9p8w: jackson-databind @JsonView bypass. Spring Boot 3.5.16's
-// BOM pins jackson-bom 2.21.4 (vulnerable). Re-import the Jackson BOM at the
-// patched 2.21.5 AFTER Spring Boot's BOM so the later import wins.
-dependencyManagement {
-    imports {
-        mavenBom "com.fasterxml.jackson:jackson-bom:2.21.5"
-    }
-}
+// Jackson BOM version is overridden centrally via jackson-bom.version in
+// gradle.properties (covers GHSA-mhm7-754m-9p8w and CVE-2026-89425).
 
 dependencies {
     implementation project(":syncflow-core")
