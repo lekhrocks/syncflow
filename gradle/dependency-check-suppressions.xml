@@ -8,4 +8,18 @@
             <cve>CVE-XXXX-YYYY</cve>
         </suppress>
     -->
+    <suppress>
+        <notes>CVE-2026-47884 (XsltView RCE): not exploitable. Requires XsltView with a /** view mapping;
+            this app is REST-only (no ViewResolver, ModelAndView, or XsltView usage). No 6.2.x fix exists;
+            patched only in Spring Framework 7.0.9 / Spring Boot 4. Remove on Boot 4 migration.</notes>
+        <cve>CVE-2026-47884</cve>
+    </suppress>
+    <suppress>
+        <notes>CVE-2026-104849 (tinypool prototype pollution): build-time only (Docusaurus SSG in website/),
+            not shipped code. Exploit requires pool.run(task, options) without an own filename property;
+            @docusaurus/core calls pool.run(task) single-arg, which the advisory states is unaffected.
+            No 1.x fix; 2.1.2 is a major bump outside docusaurus's ^1.0.2 range. Remove when docusaurus
+            migrates to tinypool 2.x.</notes>
+        <cve>CVE-2026-104849</cve>
+    </suppress>
 </suppressions>
