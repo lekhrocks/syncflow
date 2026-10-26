@@ -19,7 +19,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@tabler/icons-react": "^3.49.0",
     "@tanstack/react-query": "^5.102.8",
-    "@xyflow/react": "^12.4.0",
+    "@xyflow/react": "^12.12.0",
     "ag-grid-community": "^33.0.0",
     "ag-grid-react": "^33.0.0",
     "axios": "^1.7.9",
