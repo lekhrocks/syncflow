@@ -56,6 +56,6 @@ dependencies {
     testImplementation libs.testcontainers.junit.jupiter
     testImplementation libs.awaitility
     testImplementation libs.archunit.junit5
-    testImplementation "io.rest-assured:rest-assured:5.5.1"
+    testImplementation "io.rest-assured:rest-assured:6.3.0"
     testImplementation "org.skyscreamer:jsonassert:1.5.3"
 }
