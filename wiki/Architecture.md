@@ -6,10 +6,10 @@
 syncflow-common        Shared primitives, tenant context, exceptions
 syncflow-core          Domain models, SPI interfaces, pipeline/snapshot/CDC logic
 syncflow-connectors    Concrete connectors (JDBC, Debezium, MongoDB, writers)
+syncflow-expression    SpEL adapter for the core ExpressionEvaluator port
 syncflow-persistence   JPA entities, Spring Data repos, Flyway migrations
 syncflow-api           REST controllers, orchestration, runtime state
 syncflow-security      Security configuration, agent token filter
-syncflow-monitoring    Micrometer metrics, OpenTelemetry integration
 syncflow-plugin-api    Standalone SPI for third-party connector plugins
 syncflow-agent         Standalone agent for distributed execution
 ```

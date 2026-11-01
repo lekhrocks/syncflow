@@ -10,13 +10,19 @@ import com.syncflow.core.registry.ConnectorRegistry;
 import com.syncflow.core.repository.PipelineRepository;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.ConnectorValidationResult;
-import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-@Service
+/**
+ * Application service for pipeline lifecycle (create/update/start/stop).
+ *
+ * <p>
+ * Not a Spring bean — {@code syncflow-core} carries no framework dependency.
+ * It is constructed directly (see {@code PipelineServiceTest}); the REST layer
+ * uses {@code PipelineDesignerService} in {@code syncflow-api}.
+ */
 public class PipelineService {
 
     private final PipelineRepository repository;

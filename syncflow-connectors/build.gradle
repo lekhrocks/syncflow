@@ -4,6 +4,10 @@ plugins {
 
 dependencies {
     implementation project(":syncflow-core")
+    // Connectors are Spring @Components (stereotype + DisposableBean) discovered
+    // by the api's context. Previously inherited transitively from syncflow-core,
+    // which no longer carries Spring — declare it here directly.
+    implementation "org.springframework:spring-context:6.2.6"
     implementation libs.lombok
     implementation libs.postgresql
     implementation libs.mysql.connector.j

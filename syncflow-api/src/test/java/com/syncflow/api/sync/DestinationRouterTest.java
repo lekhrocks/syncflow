@@ -1,6 +1,5 @@
 package com.syncflow.api.sync;
 
-import com.syncflow.api.connection.service.ConnectionService;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.cdc.CDCOperation;
 import com.syncflow.core.cdc.EventHeader;
@@ -8,16 +7,13 @@ import com.syncflow.core.cdc.EventMetadata;
 import com.syncflow.core.cdc.EventPayload;
 import com.syncflow.core.cdc.EventSource;
 import com.syncflow.core.cdc.OffsetInformation;
-import com.syncflow.core.connection.Connection;
-import com.syncflow.core.connection.ConnectionId;
-import com.syncflow.core.connection.ConnectionMetadata;
-import com.syncflow.core.connection.ConnectionProperties;
-import com.syncflow.core.connection.ConnectionStatus;
-import com.syncflow.core.connection.ConnectionType;
-import com.syncflow.core.connection.Credentials;
+import com.syncflow.core.connection.spi.ConnectionLookup;
+import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.model.ConnectorType;
 import com.syncflow.core.spi.writer.DestinationWriter;
 import com.syncflow.core.spi.writer.WriterRegistry;
+import com.syncflow.tenant.TenantContext;
+import com.syncflow.tenant.TenantId;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -25,9 +21,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,67 +39,91 @@ import static org.mockito.Mockito.when;
  * - upserts go through {@link DestinationWriter#upsertBatch} (ON CONFLICT)
  * when the event carries primary-key columns
  * - plain inserts only when no key columns are known
+ * - the caller's TenantContext is forwarded to the connection lookup verbatim
+ * (never replaced by the system tenant), so multi-tenant CDC resolves the
+ * right destination connection
  */
 class DestinationRouterTest {
 
-    private final ConnectionService connectionService = mock(ConnectionService.class);
+    private final ConnectionLookup connectionLookup = mock(ConnectionLookup.class);
     private final WriterRegistry writerRegistry = mock(WriterRegistry.class);
     private final DestinationWriter writer = mock(DestinationWriter.class);
-    private final DestinationRouter router = new DestinationRouter(writerRegistry, connectionService);
+    private final DestinationRouter router = new DestinationRouter(writerRegistry, connectionLookup);
 
-    private Connection pg() {
-        var props = new ConnectionProperties(ConnectionType.POSTGRESQL,
-                "localhost", 5432, "dest", Map.of());
-        return Connection.restore(ConnectionId.generate(), "dest-conn", props,
-                new Credentials("u", "p"), ConnectionStatus.VALID,
-                ConnectionMetadata.unknown(), Instant.now(), Instant.now());
+    private static final TenantContext TENANT = new TenantContext(
+            TenantId.from("11111111-2222-3333-4444-555555555555"),
+            null, null, null, "user", Set.of(), Instant.now());
+
+    private ConnectionConfiguration pgConfig() {
+        return new ConnectionConfiguration(ConnectorType.POSTGRESQL,
+                "localhost", 5432, "dest", "u", "p", Map.of());
+    }
+
+    private void stubLookup() {
+        when(connectionLookup.getWithDecryptedCredentials("dest-conn", TENANT))
+                .thenReturn(pgConfig());
+        when(writerRegistry.get(ConnectorType.POSTGRESQL)).thenReturn(Optional.of(writer));
     }
 
     @Test
     void rowsRoutedToDestinationTableNotSource() {
-        when(connectionService.getWithDecryptedCredentials("dest-conn")).thenReturn(pg());
-        when(writerRegistry.get(ConnectorType.POSTGRESQL)).thenReturn(Optional.of(writer));
-        when(connectionService.getWithDecryptedCredentials(any())).thenReturn(pg());
+        stubLookup();
 
         var event = event("src_orders", "dest_orders", CDCOperation.INSERT,
                 Map.of("id", 1, "name", "a"), Map.of("id", 1));
 
-        router.writeBatch("dest-conn", List.of(event), List.of("id", "name"));
+        router.writeBatch("dest-conn", List.of(event), List.of("id", "name"), TENANT);
 
         // R2: the router must pass the DESTINATION table name to the writer.
-        verify(writer).upsertBatch(org.mockito.ArgumentMatchers.eq("dest_orders"),
-                anyList(), anyList(), anyList());
+        verify(writer).upsertBatch(eq("dest_orders"), anyList(), anyList(), anyList());
     }
 
     @Test
     void updateWithPrimaryKeyUsesUpsert() {
-        when(connectionService.getWithDecryptedCredentials(any())).thenReturn(pg());
-        when(writerRegistry.get(ConnectorType.POSTGRESQL)).thenReturn(Optional.of(writer));
+        stubLookup();
 
         var event = event("src_orders", "dest_orders", CDCOperation.UPDATE,
                 Map.of("id", 1, "name", "b"), Map.of("id", 1));
 
-        router.writeBatch("dest-conn", List.of(event), List.of("id", "name"));
+        router.writeBatch("dest-conn", List.of(event), List.of("id", "name"), TENANT);
 
         // R3: an UPDATE carrying PK columns must use upsert (ON CONFLICT), not a
         // plain insert that would fail on a duplicate key for an existing row.
-        verify(writer).upsertBatch(any(), anyList(), anyList(), org.mockito.ArgumentMatchers.argThat(
+        verify(writer).upsertBatch(any(), anyList(), anyList(), argThat(
                 keys -> keys.equals(List.of("id"))));
         verify(writer, never()).writeBatch(any(), anyList(), anyList());
     }
 
     @Test
     void insertWithoutKeyColumnsFallsBackToPlainInsert() {
-        when(connectionService.getWithDecryptedCredentials(any())).thenReturn(pg());
-        when(writerRegistry.get(ConnectorType.POSTGRESQL)).thenReturn(Optional.of(writer));
+        stubLookup();
 
         var event = event("src_orders", "dest_orders", CDCOperation.INSERT,
                 Map.of("id", 1, "name", "a"), Map.of());
 
-        router.writeBatch("dest-conn", List.of(event), List.of("id", "name"));
+        router.writeBatch("dest-conn", List.of(event), List.of("id", "name"), TENANT);
 
         verify(writer).writeBatch(any(), anyList(), anyList());
         verify(writer, never()).upsertBatch(any(), anyList(), anyList(), anyList());
+    }
+
+    /**
+     * The tenant passed by the caller must reach the connection lookup unchanged.
+     * Guards against re-introducing a TenantContextHolder read in the API
+     * adapter: the CDC worker's virtual thread never carries the ThreadLocal, so
+     * a holder-based lookup would silently resolve under the system tenant and
+     * fail to find (or worse, mis-route) connections owned by real tenants.
+     */
+    @Test
+    void callerTenantIsForwardedToConnectionLookup() {
+        stubLookup();
+
+        var event = event("src_orders", "dest_orders", CDCOperation.INSERT,
+                Map.of("id", 1, "name", "a"), Map.of("id", 1));
+
+        router.writeBatch("dest-conn", List.of(event), List.of("id", "name"), TENANT);
+
+        verify(connectionLookup).getWithDecryptedCredentials(eq("dest-conn"), same(TENANT));
     }
 
     /** Minimal CDC event with a source/dest table and optional PK columns. */

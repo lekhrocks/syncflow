@@ -2,14 +2,20 @@ package com.syncflow.core.repository;
 
 import com.syncflow.core.model.Pipeline;
 import com.syncflow.core.model.PipelineStatus;
-import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Repository
+/**
+ * In-memory {@link PipelineRepository}, used directly by core's unit tests.
+ *
+ * <p>
+ * Not a Spring bean: production uses the JPA-backed adapter in
+ * {@code syncflow-persistence}/{@code syncflow-api}. This class stays
+ * framework-free so {@code syncflow-core} carries no Spring dependency.
+ */
 public class InMemoryPipelineRepository implements PipelineRepository {
 
     private final Map<String, Pipeline> store = new ConcurrentHashMap<>();

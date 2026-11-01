@@ -1,0 +1,24 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    // The ExpressionEvaluator port + ExpressionEvaluationException live in core.
+    api project(":syncflow-core")
+
+    // SpEL only — the narrowest Spring artifact that provides
+    // SpelExpressionParser / SimpleEvaluationContext. Deliberately NOT
+    // spring-context: this module is an adapter, and pulling the full context
+    // would drag AOP/Beans/JDBC into every consumer.
+    implementation "org.springframework:spring-expression:6.2.6"
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+
+    testImplementation libs.junit.jupiter
+    testImplementation libs.junit.platform.launcher
+    testImplementation libs.mockito.core
+    testImplementation libs.mockito.junit.jupiter
+}
+
+tasks.named("jar") { enabled = true }

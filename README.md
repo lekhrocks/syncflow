@@ -9,7 +9,8 @@ SyncFlow is a production-grade, connector-based Change Data Capture (CDC) platfo
 │                     syncflow-api                    │
 │  REST (Pipeline CRUD)   │  GraphQL  │  OpenAPI      │
 ├─────────────────────────────────────────────────────┤
-│  syncflow-security      │  syncflow-monitoring      │
+│  syncflow-security      │  syncflow-persistence     │
+│                         │  (JPA, Flyway migrations) │
 ├─────────────────────────────────────────────────────┤
 │  syncflow-orchestrator  │  syncflow-core            │
 │                         │  (SPI, Model, Registry)   │
@@ -29,14 +30,17 @@ SyncFlow is a production-grade, connector-based Change Data Capture (CDC) platfo
 | `syncflow-core` | Domain model, Connector SPI, registry, pipeline repository/service |
 | `syncflow-api` | REST controllers, GraphQL resolver, global error handling, Flyway migrations |
 | `syncflow-connectors` | Connector SPI implementations (one class per database type) |
-| `syncflow-orchestrator` | Pipeline lifecycle orchestration (future: CDC runtime) |
+| `syncflow-expression` | SpEL implementation of the `ExpressionEvaluator` port (used by `EXPRESSION` transform rules) |
+| `syncflow-persistence` | JPA entities, Spring Data repositories, Flyway migrations |
+| `syncflow-runtime` | `DestinationRouter` — routes records to the target writer |
+| `syncflow-plugin-api` | Standalone SPI for third-party connector plugins |
+| `syncflow-agent` | Standalone agent for distributed execution in customer VPCs |
 | `syncflow-security` | Spring Security configuration |
-| `syncflow-monitoring` | Micrometer metrics, OpenTelemetry integration |
-| `syncflow-test` | Integration test suite with Testcontainers |
 
 ### Key Decisions
 
-- **Hexagonal + Clean Architecture**: Core domain (`syncflow-core`) has zero dependencies on web framework or database drivers.
+- **Hexagonal + Clean Architecture**: Core domain (`syncflow-core`) sits at the center and is **framework-free** (no Spring, no ORM); adapters (`persistence`, `connectors`, `runtime`, `expression`) depend inward on it, and `syncflow-api` is the composition root. Boundaries are enforced by ArchUnit (`syncflow-api/src/test/.../ArchitectureTest.java`). *Two `@Disabled` burn-down rules remain: `api` still reaches into persistence entities (19 classes) and repositories (20 classes).*
+- **Ports over framework types**: Cross-cutting capabilities are abstracted behind ports owned by core. E.g. column expressions use the `ExpressionEvaluator` port (SpEL implementation lives in `syncflow-expression`), so core never depends on an expression engine.
 - **Connector SPI**: `Connector` interface with `connect()`, `disconnect()`, `validate()`, `discoverSchemas()`, `discoverTables()`, `health()`, `metadata()`. Add a new database by implementing one class.
 - **Spring auto-discovery**: Connectors are `@Component` classes automatically discovered by `SpringConnectorRegistry` on startup.
 - **In-memory repository first**: `InMemoryPipelineRepository` for iteration; swap to JPA-backed repository when persistence needs stabilize.

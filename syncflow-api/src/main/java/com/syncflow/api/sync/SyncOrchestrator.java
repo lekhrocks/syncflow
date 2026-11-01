@@ -10,6 +10,7 @@ import com.syncflow.persistence.sync.repository.SyncJobRepository;
 import com.syncflow.persistence.sync.repository.EventQueueSnapshotRepository;
 import com.syncflow.persistence.sync.entity.EventQueueSnapshotEntity;
 import com.syncflow.api.config.RuntimeProperties;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.syncflow.core.cdc.CDCEvent;
 import com.syncflow.core.cdc.CDCOperation;
 import com.syncflow.core.cdc.CaptureStatus;
@@ -20,6 +21,7 @@ import com.syncflow.core.cdc.EventSource;
 import com.syncflow.core.cdc.OffsetInformation;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
 import com.syncflow.core.pipeline.mapping.TableMapping;
+import com.syncflow.core.pipeline.transform.ExpressionEvaluator;
 import com.syncflow.core.snapshot.pipeline.FilterProcessor;
 import com.syncflow.core.snapshot.pipeline.ProcessingContext;
 import com.syncflow.core.snapshot.pipeline.RecordProcessor;
@@ -74,6 +76,7 @@ public class SyncOrchestrator {
     private final MeterRegistry meterRegistry;
     private final StatusBroadcaster broadcaster;
     private final RuntimeProperties runtime;
+    private final ExpressionEvaluator expressionEvaluator;
 
     // Transient in-memory state: event queues, worker threads, running flags.
     // The SyncJob itself (state + statistics) is durable in sync_jobs.
@@ -92,7 +95,8 @@ public class SyncOrchestrator {
             RuntimeStateJson json,
             MeterRegistry meterRegistry,
             StatusBroadcaster broadcaster,
-            RuntimeProperties runtime) {
+            RuntimeProperties runtime,
+            ExpressionEvaluator expressionEvaluator) {
         this.captureLifecycle = captureLifecycle;
         this.pipelineService = pipelineService;
         this.router = router;
@@ -105,6 +109,7 @@ public class SyncOrchestrator {
         this.meterRegistry = meterRegistry;
         this.broadcaster = broadcaster;
         this.runtime = runtime;
+        this.expressionEvaluator = expressionEvaluator;
     }
 
     /** Tenant-scoped map key so runtime state cannot collide across tenants. */
@@ -437,7 +442,7 @@ public class SyncOrchestrator {
             var pCtx = new ProcessingContext(null, mapping);
             var chain = chainCache.computeIfAbsent(mapping, m -> new FilterProcessor()
                     .andThen(new SqlRowTransformProcessor(m))
-                    .andThen(new TransformProcessor()));
+                    .andThen(new TransformProcessor(expressionEvaluator)));
             var filtered = chain.process(payload, pCtx);
             if (filtered == null) {
                 stats.skippedEvents.incrementAndGet();
@@ -512,7 +517,7 @@ public class SyncOrchestrator {
                 events.add(minimalEvent(mapping, CDCOperation.DELETE, null, pk));
             }
             if (!events.isEmpty()) {
-                var result = router.writeBatch(destConnectionId, events, destColumns);
+                var result = router.writeBatch(destConnectionId, events, destColumns, tenantContext);
                 if (!result.success()) {
                     // on a batched failure we can't tell which event failed.
                     // DLQ each once (RetryEngine.evaluate handles the terminal
@@ -666,7 +671,7 @@ public class SyncOrchestrator {
                 // Deserialize events
                 var events = json.fromJson(
                         snapshot.getEventsJson(),
-                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<com.syncflow.core.cdc.CDCEvent>>() {
+                        new TypeReference<List<CDCEvent>>() {
                         });
 
                 // Requeue events (restore order)

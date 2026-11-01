@@ -11,8 +11,9 @@ import com.syncflow.core.pipeline.filter.FilterOperator;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
 import com.syncflow.core.pipeline.mapping.PrimaryKeyMapping;
 import com.syncflow.core.pipeline.mapping.TableMapping;
-import com.syncflow.core.pipeline.transform.SqlExpressionEvaluator;
+import com.syncflow.core.pipeline.transform.ExpressionEvaluationException;
 import com.syncflow.core.pipeline.transform.TransformationRule;
+import com.syncflow.expression.SpelExpressionEvaluator;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -201,7 +202,7 @@ class ProcessingPipelineTest {
         record.put("id", 1);
         record.put("name", "alice");
 
-        var result = new TransformProcessor().process(record, ctx(mapping));
+        var result = new TransformProcessor(new SpelExpressionEvaluator()).process(record, ctx(mapping));
         assertEquals("ALICE", result.get("name_upper"));
     }
 
@@ -218,7 +219,7 @@ class ProcessingPipelineTest {
         record.put("last_name", "Smith");
         record.put("full_name", "");
 
-        var result = new TransformProcessor().process(record, ctx(mapping));
+        var result = new TransformProcessor(new SpelExpressionEvaluator()).process(record, ctx(mapping));
         assertEquals("Jane Smith", result.get("full_name"));
     }
 
@@ -228,7 +229,7 @@ class ProcessingPipelineTest {
         var cm = new ColumnMapping("nickname", "nickname",
                 List.of(TransformationRule.expression("#value != null ? #value : 'anonymous'")));
         var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
-        var transform = new TransformProcessor();
+        var transform = new TransformProcessor(new SpelExpressionEvaluator());
         var ctx = ctx(mapping);
 
         // non-null value: pass through unchanged
@@ -255,7 +256,7 @@ class ProcessingPipelineTest {
         record.put("id", 1);
         record.put("price", 100.0);
 
-        var result = new TransformProcessor().process(record, ctx(mapping));
+        var result = new TransformProcessor(new SpelExpressionEvaluator()).process(record, ctx(mapping));
         assertEquals(110.0, (Double) result.get("price_with_tax"), 0.001);
     }
 
@@ -270,7 +271,7 @@ class ProcessingPipelineTest {
         record.put("id", 1);
         record.put("code", "ABCDEF");
 
-        var result = new TransformProcessor().process(record, ctx(mapping));
+        var result = new TransformProcessor(new SpelExpressionEvaluator()).process(record, ctx(mapping));
         assertEquals("ABC", result.get("prefix"));
     }
 
@@ -286,7 +287,7 @@ class ProcessingPipelineTest {
         record.put("id", 1);
         record.put("name", null);
 
-        var result = new TransformProcessor().process(record, ctx(mapping));
+        var result = new TransformProcessor(new SpelExpressionEvaluator()).process(record, ctx(mapping));
         assertNull(result.get("name_upper"));
     }
 
@@ -301,7 +302,7 @@ class ProcessingPipelineTest {
                 // then: uppercase the result
                 TransformationRule.uppercase()));
         var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
-        var transform = new TransformProcessor();
+        var transform = new TransformProcessor(new SpelExpressionEvaluator());
         var ctx = ctx(mapping);
 
         var r1 = new HashMap<String, Object>();
@@ -328,8 +329,8 @@ class ProcessingPipelineTest {
         var mapping = new TableMapping("t", "t_dest", null, pk, List.of(cm), List.of(), List.of(), null);
 
         var record = Map.<String, Object>of("id", 1, "name", "test");
-        assertThrows(SqlExpressionEvaluator.ExpressionEvaluationException.class,
-                () -> new TransformProcessor().process(record, ctx(mapping)));
+        assertThrows(ExpressionEvaluationException.class,
+                () -> new TransformProcessor(new SpelExpressionEvaluator()).process(record, ctx(mapping)));
     }
 
     // -------------------------------------------------------------------------

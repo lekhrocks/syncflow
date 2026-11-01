@@ -31,6 +31,7 @@ import com.syncflow.core.pipeline.DestinationReference;
 import com.syncflow.core.pipeline.AuditInformation;
 import com.syncflow.core.pipeline.mapping.TableMapping;
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
+import com.syncflow.expression.SpelExpressionEvaluator;
 import com.syncflow.core.pipeline.transform.TransformationRule;
 import com.syncflow.core.sync.SyncState;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -44,6 +45,11 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Regression tests for multi-table CDC dispatch (F2 fix).
@@ -145,39 +151,28 @@ class MultiTableDispatchTest {
     }
 
     private SyncOrchestrator buildOrchestrator(PipelineDesign pipeline) {
-        var pipelineService = org.mockito.Mockito.mock(PipelineDesignerService.class);
-        org.mockito.Mockito.when(pipelineService.get(org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(pipeline);
-        var connectionService = org.mockito.Mockito.mock(ConnectionService.class);
-        org.mockito.Mockito.when(connectionService.list()).thenReturn(List.of());
-        var connectorRegistry = org.mockito.Mockito.mock(ConnectorRegistry.class);
-        org.mockito.Mockito.when(connectorRegistry.get(org.mockito.ArgumentMatchers.any(ConnectorType.class)))
+        var pipelineService = mock(PipelineDesignerService.class);
+        when(pipelineService.get(anyString())).thenReturn(pipeline);
+        var connectionService = mock(ConnectionService.class);
+        when(connectionService.list()).thenReturn(List.of());
+        var connectorRegistry = mock(ConnectorRegistry.class);
+        when(connectorRegistry.get(any(ConnectorType.class))).thenReturn(Optional.empty());
+        var captureLifecycle = mock(CaptureLifecycle.class);
+        when(captureLifecycle.status(anyString(), any())).thenReturn(CaptureStatus.INACTIVE);
+        var syncJobRepo = mock(SyncJobRepository.class);
+        when(syncJobRepo.findByTenantIdAndPipelineId(anyString(), anyString()))
                 .thenReturn(Optional.empty());
-        var captureLifecycle = org.mockito.Mockito.mock(CaptureLifecycle.class);
-        org.mockito.Mockito
-                .when(captureLifecycle.status(org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any()))
-                .thenReturn(CaptureStatus.INACTIVE);
-        var syncJobRepo = org.mockito.Mockito.mock(SyncJobRepository.class);
-        org.mockito.Mockito
-                .when(syncJobRepo.findByTenantIdAndPipelineId(org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(Optional.empty());
-        var snapshotRepo = org.mockito.Mockito.mock(EventQueueSnapshotRepository.class);
-        var idempotencyStore = org.mockito.Mockito.mock(EventIdempotencyStore.class);
-        org.mockito.Mockito.when(idempotencyStore.isProcessed(org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(false);
-        var destRouter = org.mockito.Mockito.mock(DestinationRouter.class);
-        org.mockito.Mockito
-                .when(destRouter.write(org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any(com.syncflow.core.cdc.CDCEvent.class),
-                        org.mockito.ArgumentMatchers.anyList()))
+        var snapshotRepo = mock(EventQueueSnapshotRepository.class);
+        var idempotencyStore = mock(EventIdempotencyStore.class);
+        when(idempotencyStore.isProcessed(anyString())).thenReturn(false);
+        var destRouter = mock(DestinationRouter.class);
+        when(destRouter.writeBatch(anyString(), anyList(), anyList(), any(TenantContext.class)))
                 .thenReturn(new DestinationRouter.WriteResult(true, null));
-        var dlq = org.mockito.Mockito.mock(DeadLetterQueue.class);
+        var dlq = mock(DeadLetterQueue.class);
         var runtime = new RuntimeProperties();
         var retryEngine = new RetryEngine(dlq, new SimpleMeterRegistry(), runtime);
         var meter = new SimpleMeterRegistry();
-        var broadcaster = org.mockito.Mockito.mock(StatusBroadcaster.class);
+        var broadcaster = mock(StatusBroadcaster.class);
 
         return new SyncOrchestrator(
                 captureLifecycle,
@@ -191,6 +186,7 @@ class MultiTableDispatchTest {
                 new RuntimeStateJson(objectMapper),
                 meter,
                 broadcaster,
-                runtime);
+                runtime,
+                new SpelExpressionEvaluator());
     }
 }

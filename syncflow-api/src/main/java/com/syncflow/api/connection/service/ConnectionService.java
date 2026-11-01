@@ -9,12 +9,23 @@ import com.syncflow.common.exception.SyncFlowException;
 import com.syncflow.core.connection.Connection;
 import com.syncflow.core.connection.ConnectionProperties;
 import com.syncflow.core.connection.Credentials;
+import com.syncflow.core.connection.spi.ConnectionLookup;
+import com.syncflow.core.model.ConnectionConfiguration;
+import com.syncflow.api.metadata.ConnectorTypeMapper;
+import com.syncflow.tenant.TenantContext;
 import com.syncflow.tenant.TenantSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * Request-scoped connection service. The runtime-facing
+ * {@link ConnectionLookup} port is exposed by
+ * {@code ConnectionLookupAdapter}, not implemented here — one bean per port
+ * keeps
+ * injection unambiguous.
+ */
 @Service
 @Transactional
 public class ConnectionService {
@@ -82,10 +93,23 @@ public class ConnectionService {
     @Transactional(readOnly = true)
     public Connection getWithDecryptedCredentials(String id) {
         var entity = findEntity(id);
-        var credentials = new Credentials(
-                encryption.decrypt(entity.getEncryptedUsername()),
-                encryption.decrypt(entity.getEncryptedPassword()));
-        return toDomain(entity, credentials);
+        return toDomainWithCredentials(entity);
+    }
+
+    /**
+     * Tenant-explicit lookup; never depends on request ThreadLocal state.
+     * Exposed to runtime code through {@code ConnectionLookupAdapter}.
+     */
+    @Transactional(readOnly = true)
+    public ConnectionConfiguration getWithDecryptedCredentials(String id, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        var entity = repository.findByIdAndTenantId(id, tenantContext.tenantId().value())
+                .orElseThrow(() -> SyncFlowException.notFound("Connection", id));
+        var domain = toDomainWithCredentials(entity);
+        var p = domain.getProperties();
+        var c = domain.getCredentials();
+        return new ConnectionConfiguration(ConnectorTypeMapper.toCore(p.type()), p.host(), p.port(),
+                p.database(), c.username(), c.password(), p.options());
     }
 
     private ConnectionEntity findEntity(String id) {
@@ -99,6 +123,13 @@ public class ConnectionService {
 
     private Connection toDomain(ConnectionEntity entity) {
         return toDomain(entity, null);
+    }
+
+    private Connection toDomainWithCredentials(ConnectionEntity entity) {
+        var credentials = new Credentials(
+                encryption.decrypt(entity.getEncryptedUsername()),
+                encryption.decrypt(entity.getEncryptedPassword()));
+        return toDomain(entity, credentials);
     }
 
     private Connection toDomain(ConnectionEntity entity, Credentials credentials) {

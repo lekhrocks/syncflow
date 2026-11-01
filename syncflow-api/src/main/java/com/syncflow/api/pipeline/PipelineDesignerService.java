@@ -13,6 +13,8 @@ import com.syncflow.core.pipeline.DestinationReference;
 import com.syncflow.core.pipeline.PipelineDesign;
 import com.syncflow.core.pipeline.PipelineName;
 import com.syncflow.core.pipeline.PipelineSettings;
+import com.syncflow.core.pipeline.spi.PipelineLookup;
+import com.syncflow.tenant.TenantContext;
 import com.syncflow.core.pipeline.SourceReference;
 import com.syncflow.core.pipeline.mapping.TableMapping;
 import com.syncflow.core.pipeline.preview.ConflictReport;
@@ -21,6 +23,8 @@ import com.syncflow.core.pipeline.preview.PreviewColumn;
 import com.syncflow.core.pipeline.preview.PreviewFilter;
 import com.syncflow.core.pipeline.preview.PreviewTransformation;
 import com.syncflow.core.pipeline.validation.ValidationResult;
+import com.syncflow.core.pipeline.validation.ValidationIssue;
+import com.syncflow.core.pipeline.transform.TransformationRule;
 import com.syncflow.tenant.TenantSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
@@ -31,6 +35,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 
+/**
+ * Request-scoped pipeline design service. The runtime-facing
+ * {@link PipelineLookup} port is exposed by
+ * {@code PipelineLookupAdapter}, not implemented here — one bean per port keeps
+ * injection unambiguous.
+ */
 @Service
 public class PipelineDesignerService {
 
@@ -74,6 +84,18 @@ public class PipelineDesignerService {
     @Transactional(readOnly = true)
     public PipelineDesign get(String id) {
         return designRepo.findByIdAndTenantId(id, tenantId())
+                .map(e -> mapper.toDomain(e, jsonMapper))
+                .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
+    }
+
+    /**
+     * Tenant-explicit lookup; never depends on request ThreadLocal state.
+     * Exposed to runtime code through {@code PipelineLookupAdapter}.
+     */
+    @Transactional(readOnly = true)
+    public PipelineDesign get(String id, TenantContext tenantContext) {
+        TenantContext.require(tenantContext);
+        return designRepo.findByIdAndTenantId(id, tenantContext.tenantId().value())
                 .map(e -> mapper.toDomain(e, jsonMapper))
                 .orElseThrow(() -> new NoSuchElementException("Pipeline not found: " + id));
     }
@@ -204,7 +226,7 @@ public class PipelineDesignerService {
     public ConflictReport detectConflicts(String id) {
         var issues = validator.validate(get(id)).issues();
         var conflicts = issues.stream()
-                .filter(i -> i.severity() == com.syncflow.core.pipeline.validation.ValidationIssue.Severity.ERROR)
+                .filter(i -> i.severity() == ValidationIssue.Severity.ERROR)
                 .map(i -> new ConflictReport.ConflictItem(i.code(), i.field(), "", i.message()))
                 .toList();
         return conflicts.isEmpty() ? ConflictReport.clear() : new ConflictReport(true, conflicts);
@@ -225,7 +247,7 @@ public class PipelineDesignerService {
         versionRepo.save(v);
     }
 
-    private String summarizeTransform(com.syncflow.core.pipeline.transform.TransformationRule tr) {
+    private String summarizeTransform(TransformationRule tr) {
         return switch (tr.type()) {
             case RENAME -> "Rename to " + tr.parameters().get("newName");
             case CONSTANT_VALUE -> "Constant: " + tr.parameters().get("value");

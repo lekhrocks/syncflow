@@ -1,5 +1,7 @@
-package com.syncflow.core.pipeline.transform;
+package com.syncflow.expression;
 
+import com.syncflow.core.pipeline.transform.ExpressionEvaluationException;
+import com.syncflow.core.pipeline.transform.ExpressionEvaluator;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,8 +11,14 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.SimpleEvaluationContext;
 
 /**
- * Evaluates SpEL column-level expressions for the
- * {@link TransformType#EXPRESSION} rule.
+ * SpEL implementation of the {@link ExpressionEvaluator} port, backing the
+ * {@link com.syncflow.core.pipeline.transform.TransformType#EXPRESSION} rule.
+ *
+ * <p>
+ * Formerly {@code com.syncflow.core.pipeline.transform.SqlExpressionEvaluator}.
+ * Moved out of {@code syncflow-core} so the domain layer stays free of any
+ * expression-language dependency; {@code syncflow-core} now owns only the
+ * {@link ExpressionEvaluator} abstraction.
  *
  * <h3>Expression context</h3>
  * Two variables are bound for every evaluation:
@@ -57,20 +65,19 @@ import org.springframework.expression.spel.support.SimpleEvaluationContext;
  *
  * <h3>Thread-safety</h3>
  * {@link SpelExpressionParser} and {@link SimpleEvaluationContext} are
- * lightweight and
- * safe to construct per-call. The evaluator itself is stateless and can be
- * shared.
+ * lightweight and safe to construct per-call. The evaluator itself is
+ * stateless and can be shared.
  */
-public class SqlExpressionEvaluator {
+public class SpelExpressionEvaluator implements ExpressionEvaluator {
 
-    private static final Logger log = LoggerFactory.getLogger(SqlExpressionEvaluator.class);
+    private static final Logger log = LoggerFactory.getLogger(SpelExpressionEvaluator.class);
 
     private static final SpelExpressionParser PARSER = new SpelExpressionParser();
 
     /**
-     * Evaluates {@code expressionStr} against the given column value and full row.
+     * Evaluates {@code expression} against the given column value and full row.
      *
-     * @param expressionStr
+     * @param expression
      *            the SpEL expression (e.g.
      *            {@code "#value?.toString().toUpperCase()"})
      * @param value
@@ -83,14 +90,15 @@ public class SqlExpressionEvaluator {
      *             if the expression is syntactically invalid
      *             or throws during evaluation
      */
-    public Object evaluate(String expressionStr, Object value, Map<String, Object> row) {
-        if (expressionStr == null || expressionStr.isBlank()) {
+    @Override
+    public Object evaluate(String expression, Object value, Map<String, Object> row) {
+        if (expression == null || expression.isBlank()) {
             log.warn("EXPRESSION rule has blank expression string; returning value unchanged");
             return value;
         }
 
         try {
-            var expression = PARSER.parseExpression(expressionStr);
+            var parsed = PARSER.parseExpression(expression);
 
             // SimpleEvaluationContext with instance method support:
             // - allows property/index access and instance method calls (.toUpperCase(),
@@ -104,29 +112,16 @@ public class SqlExpressionEvaluator {
             context.setVariable("value", value);
             context.setVariable("row", row);
 
-            return expression.getValue(context);
+            return parsed.getValue(context);
 
         } catch (ParseException e) {
             throw new ExpressionEvaluationException(
-                    "Invalid SpEL expression [" + expressionStr + "]: " + e.getMessage(), e);
+                    "Invalid SpEL expression [" + expression + "]: " + e.getMessage(), e);
         } catch (EvaluationException e) {
             throw new ExpressionEvaluationException(
-                    "Error evaluating expression [" + expressionStr + "] on value="
+                    "Error evaluating expression [" + expression + "] on value="
                             + value + ": " + e.getMessage(),
                     e);
-        }
-    }
-
-    /**
-     * Unchecked exception thrown when a SpEL expression fails to parse or evaluate.
-     * Wraps Spring's {@link ParseException} / {@link EvaluationException} so
-     * callers
-     * do not need a Spring dependency just to catch transformation errors.
-     */
-    public static class ExpressionEvaluationException extends RuntimeException {
-
-        public ExpressionEvaluationException(String message, Throwable cause) {
-            super(message, cause);
         }
     }
 }
