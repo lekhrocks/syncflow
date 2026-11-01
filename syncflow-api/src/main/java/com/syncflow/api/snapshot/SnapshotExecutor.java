@@ -14,6 +14,7 @@ import com.syncflow.api.sse.StatusBroadcaster;
 import com.syncflow.core.model.ConnectionConfiguration;
 import com.syncflow.core.pipeline.PipelineDesign;
 import com.syncflow.core.pipeline.mapping.TableMapping;
+import com.syncflow.core.pipeline.transform.ExpressionEvaluator;
 import com.syncflow.core.registry.ConnectorRegistry;
 import com.syncflow.core.snapshot.ChunkRange;
 import com.syncflow.core.snapshot.SnapshotError;
@@ -60,6 +61,7 @@ public class SnapshotExecutor {
     private final MeterRegistry meterRegistry;
     private final StatusBroadcaster broadcaster;
     private final RuntimeProperties runtime;
+    private final ExpressionEvaluator expressionEvaluator;
 
     // In-memory worker state: cancellation flags + tenant ownership. The job
     // payload itself is durable in snapshot_jobs; the in-memory job cache is a
@@ -77,7 +79,8 @@ public class SnapshotExecutor {
             RuntimeStateJson json,
             MeterRegistry meterRegistry,
             StatusBroadcaster broadcaster,
-            RuntimeProperties runtime) {
+            RuntimeProperties runtime,
+            ExpressionEvaluator expressionEvaluator) {
         this.pipelineService = pipelineService;
         this.connectionService = connectionService;
         this.lockService = lockService;
@@ -89,6 +92,7 @@ public class SnapshotExecutor {
         this.meterRegistry = meterRegistry;
         this.broadcaster = broadcaster;
         this.runtime = runtime;
+        this.expressionEvaluator = expressionEvaluator;
     }
 
     public SnapshotJob start(String pipelineId, TenantContext tenantContext) {
@@ -193,17 +197,14 @@ public class SnapshotExecutor {
     private void execute(TenantContext tenantContext, SnapshotJob job, PipelineDesign pipeline) {
         // TenantContext is threaded explicitly through every call; we never
         // set the ThreadLocal. Fail loudly if a future change reintroduces
-        // ThreadLocal usage in this worker.
+        // ThreadLocal usage in this worker — same pattern as
+        // SyncOrchestrator.run(). No finally-clear: virtual threads are not
+        // pooled, so nothing leaks across workers.
         if (TenantContextHolder.get() != null) {
             throw new IllegalStateException(
                     "Snapshot worker thread must not carry a TenantContext ThreadLocal");
         }
-        try {
-            executeInner(job, pipeline, tenantContext);
-        } finally {
-            // Defensive cleanup — matches SyncOrchestrator.run() pattern.
-            TenantContextHolder.clear();
-        }
+        executeInner(job, pipeline, tenantContext);
     }
 
     private void executeInner(SnapshotJob job, PipelineDesign pipeline, TenantContext tenantContext) {
@@ -357,7 +358,8 @@ public class SnapshotExecutor {
                 () -> isCancelled(job),
                 (updated, ctx) -> persist(updated, ctx),
                 (id, updated, ctx) -> emit(id, updated, ctx),
-                meterRegistry);
+                meterRegistry,
+                expressionEvaluator);
     }
 
     /**

@@ -12,6 +12,7 @@ import com.syncflow.core.snapshot.pipeline.FilterProcessor;
 import com.syncflow.core.snapshot.pipeline.ProcessingContext;
 import com.syncflow.core.snapshot.pipeline.SqlRowTransformProcessor;
 import com.syncflow.core.snapshot.pipeline.TransformProcessor;
+import com.syncflow.core.pipeline.transform.ExpressionEvaluator;
 import com.syncflow.core.spi.ConnectorContext;
 import com.syncflow.core.spi.SnapshotCapableConnector;
 import com.syncflow.core.spi.writer.DestinationWriter;
@@ -52,7 +53,8 @@ final class SnapshotWorker {
             ReentrantLock progressLock, BooleanSupplier isCancelled,
             java.util.function.BiConsumer<SnapshotJob, TenantContext> persist,
             TriConsumer<String, SnapshotJob, TenantContext> emit,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            ExpressionEvaluator evaluator) {
         var ctx = new ProcessingContext(pipeline, tm);
         var checkpoint = checkpointStore.get(
                 tenantContext.tenantId().value(), pipeline.id().value(), tm.sourceTable(), range.index());
@@ -74,7 +76,7 @@ final class SnapshotWorker {
         var useUpsert = keyCols != null && !keyCols.isEmpty();
         var chain = new FilterProcessor()
                 .andThen(new SqlRowTransformProcessor(tm))
-                .andThen(new TransformProcessor());
+                .andThen(new TransformProcessor(evaluator));
 
         if (isCancelled.getAsBoolean()) {
             return;

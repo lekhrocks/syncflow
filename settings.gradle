@@ -23,7 +23,8 @@ include(
     "syncflow-persistence",
     "syncflow-connectors",
     "syncflow-security",
-    "syncflow-monitoring",
     "syncflow-plugin-api",
+    "syncflow-expression",
+    "syncflow-runtime",
     "syncflow-agent"
 )

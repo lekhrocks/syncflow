@@ -1,0 +1,19 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    api project(":syncflow-core")
+    api project(":syncflow-common")
+
+    api "org.slf4j:slf4j-api:2.0.17"
+
+    testImplementation libs.junit.jupiter
+    testImplementation libs.junit.platform.launcher
+    testImplementation libs.mockito.core
+    testImplementation libs.mockito.junit.jupiter
+}
+
+// Runtime is intentionally framework-free. Spring, JPA, Kafka, and API modules
+// belong to the application adapters in syncflow-api.
+tasks.named("jar") { enabled = true }

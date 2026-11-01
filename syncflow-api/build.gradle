@@ -12,8 +12,9 @@ dependencies {
     implementation project(":syncflow-persistence")
     implementation project(":syncflow-connectors")
     implementation project(":syncflow-security")
-    implementation project(":syncflow-monitoring")
     implementation project(":syncflow-plugin-api")
+    implementation project(":syncflow-runtime")
+    implementation project(":syncflow-expression")
 
     implementation libs.spring.boot.starter.web
     implementation libs.spring.boot.starter.validation

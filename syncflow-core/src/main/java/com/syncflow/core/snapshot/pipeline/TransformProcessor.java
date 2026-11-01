@@ -1,7 +1,8 @@
 package com.syncflow.core.snapshot.pipeline;
 
 import com.syncflow.core.pipeline.mapping.ColumnMapping;
-import com.syncflow.core.pipeline.transform.SqlExpressionEvaluator;
+import com.syncflow.core.pipeline.transform.ExpressionEvaluator;
+import com.syncflow.core.pipeline.transform.ExpressionEvaluators;
 import com.syncflow.core.pipeline.transform.TransformType;
 import com.syncflow.core.pipeline.transform.TransformationRule;
 
@@ -10,10 +11,39 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+/**
+ * Applies per-column transformation rules to a record.
+ *
+ * <p>
+ * Column expressions are delegated to an {@link ExpressionEvaluator} port
+ * rather than a concrete language, keeping this class — and
+ * {@code syncflow-core} — free of any expression-engine dependency. Wire a
+ * concrete evaluator (e.g. {@code SpelExpressionEvaluator} from
+ * {@code syncflow-expression}) via the constructor when EXPRESSION rules are
+ * in use; the no-arg constructor deliberately fails on EXPRESSION rules so
+ * misconfiguration is loud instead of silently dropping the transform.
+ */
 public class TransformProcessor implements RecordProcessor {
 
-    // Stateless; safe to share across threads and calls.
-    private static final SqlExpressionEvaluator EXPRESSION_EVALUATOR = new SqlExpressionEvaluator();
+    private final ExpressionEvaluator evaluator;
+
+    /**
+     * Uses an evaluator that fails loudly if an EXPRESSION rule is evaluated.
+     * Safe for pipelines that use only non-EXPRESSION rules (RENAME, UPPERCASE,
+     * SUBSTRING, ...); those never invoke the evaluator.
+     */
+    public TransformProcessor() {
+        this(ExpressionEvaluators.unsupported());
+    }
+
+    /**
+     * @param evaluator
+     *            the expression engine used for {@link TransformType#EXPRESSION}
+     *            rules; must not be {@code null}
+     */
+    public TransformProcessor(ExpressionEvaluator evaluator) {
+        this.evaluator = Objects.requireNonNull(evaluator, "evaluator must not be null");
+    }
 
     @Override
     public Map<String, Object> process(Map<String, Object> record, ProcessingContext ctx) {
@@ -68,7 +98,7 @@ public class TransformProcessor implements RecordProcessor {
             case DEFAULT_VALUE -> value != null ? value : rule.parameters().get("value");
             case EXPRESSION -> {
                 var expr = rule.parameters().get("expression");
-                yield EXPRESSION_EVALUATOR.evaluate(expr, value, record);
+                yield evaluator.evaluate(expr, value, record);
             }
             case IGNORE -> value;
             // SQL_QUERY operates at the whole-row level in SqlRowTransformProcessor
